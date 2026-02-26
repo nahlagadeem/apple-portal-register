@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "REPLACE_WITH_NEW_APP_CLIENT_ID"
+client_id = "565e7d29ae86352b9e3c57c8c9c8af0b"
 name = "studend-register"
 application_url = "https://apple-portal-register.onrender.com"
 embedded = true
