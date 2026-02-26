@@ -1,4 +1,4 @@
-CREATE TABLE "PortalUser" (
+CREATE TABLE IF NOT EXISTS "PortalUser" (
     "id" SERIAL NOT NULL,
     "fullName" TEXT NOT NULL,
     "email" TEXT NOT NULL,
@@ -13,4 +13,4 @@ CREATE TABLE "PortalUser" (
     CONSTRAINT "PortalUser_pkey" PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX "PortalUser_email_key" ON "PortalUser"("email");
+CREATE UNIQUE INDEX IF NOT EXISTS "PortalUser_email_key" ON "PortalUser"("email");
