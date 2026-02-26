@@ -2,6 +2,7 @@ import { Form, Link, useActionData, useLoaderData } from "react-router";
 import prisma from "../db.server";
 import {
   clearUserSession,
+  ensurePortalUserTable,
   hashPassword,
   normalizeRole,
   normalizeSaudiPhone,
@@ -10,6 +11,7 @@ import {
 } from "../portal-auth.server";
 
 export async function loader({ request }) {
+  await ensurePortalUserTable();
   const userId = await requireUserId(request);
   const user = await prisma.portalUser.findUnique({
     where: { id: userId },
@@ -30,6 +32,7 @@ export async function loader({ request }) {
 }
 
 export async function action({ request }) {
+  await ensurePortalUserTable();
   const userId = await requireUserId(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");

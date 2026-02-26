@@ -1,6 +1,12 @@
 import { Form, Link, redirect, useActionData } from "react-router";
 import prisma from "../db.server";
-import { createUserSession, getUserId, normalizeEmail, verifyPassword } from "../portal-auth.server";
+import {
+  createUserSession,
+  ensurePortalUserTable,
+  getUserId,
+  normalizeEmail,
+  verifyPassword,
+} from "../portal-auth.server";
 
 export async function loader({ request }) {
   const userId = await getUserId(request);
@@ -9,6 +15,7 @@ export async function loader({ request }) {
 }
 
 export async function action({ request }) {
+  await ensurePortalUserTable();
   const formData = await request.formData();
   const email = normalizeEmail(formData.get("email"));
   const password = String(formData.get("password") || "");
