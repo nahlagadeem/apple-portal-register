@@ -1,0 +1,17 @@
+{
+  "title": "ملفي الشخصي",
+  "completeProfile": "أكمل بيانات ملفك الشخصي",
+  "fullName": "الاسم الكامل",
+  "email": "البريد الإلكتروني",
+  "instituteName": "اسم الجهة التعليمية",
+  "role": "الدور",
+  "roleStudent": "طالب",
+  "roleTeacher": "معلم",
+  "roleParent": "ولي أمر",
+  "roleOther": "أخرى",
+  "roleOtherPlaceholder": "اكتب الدور",
+  "phoneSa": "رقم الجوال السعودي (اختياري)",
+  "save": "حفظ",
+  "edit": "تعديل",
+  "changePassword": "تغيير كلمة المرور"
+}

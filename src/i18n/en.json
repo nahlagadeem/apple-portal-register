@@ -1,0 +1,17 @@
+{
+  "title": "My Profile",
+  "completeProfile": "Complete your profile",
+  "fullName": "Full name",
+  "email": "Email",
+  "instituteName": "Institute name",
+  "role": "Role",
+  "roleStudent": "Student",
+  "roleTeacher": "Teacher",
+  "roleParent": "Parent",
+  "roleOther": "Other",
+  "roleOtherPlaceholder": "Please specify",
+  "phoneSa": "Phone number (Saudi, optional)",
+  "save": "Save",
+  "edit": "Edit",
+  "changePassword": "Change password"
+}
