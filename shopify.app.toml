@@ -2,7 +2,7 @@
 
 client_id = "REPLACE_WITH_NEW_APP_CLIENT_ID"
 name = "studend-register"
-application_url = "https://REPLACE-WITH-RENDER-URL.onrender.com"
+application_url = "https://apple-portal-register.onrender.com"
 embedded = true
 
 [build]
@@ -27,5 +27,5 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://REPLACE-WITH-RENDER-URL.onrender.com/auth/callback"
+  "https://apple-portal-register.onrender.com/auth/callback"
 ]
