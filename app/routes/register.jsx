@@ -21,50 +21,64 @@ export async function loader({ request }) {
 }
 
 export async function action({ request }) {
-  await ensurePortalUserTable();
-  const formData = await request.formData();
-  const fullName = String(formData.get("fullName") || "").trim();
-  const email = normalizeEmail(formData.get("email"));
-  const institute = String(formData.get("institute") || "").trim();
-  const role = normalizeRole(formData.get("role"));
-  const roleOther = String(formData.get("roleOther") || "").trim();
-  const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
-  const password = String(formData.get("password") || "");
-  const confirmPassword = String(formData.get("confirmPassword") || "");
-
   const errors = {
-    fullName: fullName ? "" : "Full name is required.",
-    email: isValidEmail(email) ? "" : "Valid email is required.",
-    institute: institute ? "" : "Institute name is required.",
-    role: role ? "" : "Role is required.",
-    roleOther: role === "other" && !roleOther ? "Please specify role." : "",
-    phoneSa: phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "",
-    password: password.length >= 6 ? "" : "Password must be at least 6 characters.",
-    confirmPassword: password === confirmPassword ? "" : "Passwords do not match.",
+    fullName: "",
+    email: "",
+    institute: "",
+    role: "",
+    roleOther: "",
+    phoneSa: "",
+    password: "",
+    confirmPassword: "",
     general: "",
   };
 
-  if (Object.values(errors).some(Boolean)) return { ok: false, errors };
+  try {
+    await ensurePortalUserTable();
+    const formData = await request.formData();
+    const fullName = String(formData.get("fullName") || "").trim();
+    const email = normalizeEmail(formData.get("email"));
+    const institute = String(formData.get("institute") || "").trim();
+    const role = normalizeRole(formData.get("role"));
+    const roleOther = String(formData.get("roleOther") || "").trim();
+    const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
+    const password = String(formData.get("password") || "");
+    const confirmPassword = String(formData.get("confirmPassword") || "");
 
-  const existing = await prisma.portalUser.findUnique({ where: { email } });
-  if (existing) {
-    errors.email = "Email is already registered.";
+    errors.fullName = fullName ? "" : "Full name is required.";
+    errors.email = isValidEmail(email) ? "" : "Valid email is required.";
+    errors.institute = institute ? "" : "Institute name is required.";
+    errors.role = role ? "" : "Role is required.";
+    errors.roleOther = role === "other" && !roleOther ? "Please specify role." : "";
+    errors.phoneSa = phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "";
+    errors.password = password.length >= 6 ? "" : "Password must be at least 6 characters.";
+    errors.confirmPassword = password === confirmPassword ? "" : "Passwords do not match.";
+
+    if (Object.values(errors).some(Boolean)) return { ok: false, errors };
+
+    const existing = await prisma.portalUser.findUnique({ where: { email } });
+    if (existing) {
+      errors.email = "Email is already registered.";
+      return { ok: false, errors };
+    }
+
+    const user = await prisma.portalUser.create({
+      data: {
+        fullName,
+        email,
+        institute,
+        role,
+        roleOther: role === "other" ? roleOther : null,
+        phoneSa: phoneSa || null,
+        passwordHash: hashPassword(password),
+      },
+    });
+
+    return createUserSession(user.id, "/profile");
+  } catch (e) {
+    errors.general = `Registration failed. ${String(e?.message || e)}`;
     return { ok: false, errors };
   }
-
-  const user = await prisma.portalUser.create({
-    data: {
-      fullName,
-      email,
-      institute,
-      role,
-      roleOther: role === "other" ? roleOther : null,
-      phoneSa: phoneSa || null,
-      passwordHash: hashPassword(password),
-    },
-  });
-
-  return createUserSession(user.id, "/profile");
 }
 
 export default function RegisterPage() {
@@ -148,6 +162,7 @@ export default function RegisterPage() {
         </p>
         <button type="submit">Create account</button>
       </Form>
+      {errors.general ? <p style={{ color: "red" }}>{errors.general}</p> : null}
       <p style={{ marginTop: 12 }}>
         Already have account? <Link to="/login">Login</Link>
       </p>

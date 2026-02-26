@@ -98,6 +98,22 @@ export async function ensurePortalUserTable() {
   `);
 
   await prisma.$executeRawUnsafe(`
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "fullName" TEXT;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "email" TEXT;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "institute" TEXT;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "role" TEXT;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "roleOther" TEXT;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "phoneSa" TEXT;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "passwordHash" TEXT;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+    ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    UPDATE "PortalUser" SET "updatedAt" = CURRENT_TIMESTAMP WHERE "updatedAt" IS NULL;
+  `);
+
+  await prisma.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "PortalUser_email_key" ON "PortalUser"("email");
   `);
 }
