@@ -21,7 +21,7 @@ api_version = "2026-01"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,write_customers"
+scopes = "write_app_proxy,read_customers,write_customers"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
@@ -29,3 +29,8 @@ use_legacy_install_flow = false
 redirect_urls = [
   "https://apple-portal-register.onrender.com/auth/callback"
 ]
+
+[app_proxy]
+url = "https://apple-portal-register.onrender.com"
+subpath = "student-register"
+prefix = "apps"
