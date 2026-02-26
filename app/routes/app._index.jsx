@@ -3,15 +3,18 @@ export default function AppHome() {
     <s-page heading="Student Register">
       <s-section heading="Status">
         <s-paragraph>
-          This app is prepared as a standalone project for customer registration/profile
-          fields (full name, institute, role, optional Saudi phone) with Arabic/English
-          support.
+          Test routes are ready now.
         </s-paragraph>
       </s-section>
-      <s-section heading="Next">
+      <s-section heading="Test Links">
         <s-paragraph>
-          Connect this repository to a new Render service, then we will implement the full
-          customer account flow.
+          <s-link href="/register" target="_top">Open Register</s-link>
+        </s-paragraph>
+        <s-paragraph>
+          <s-link href="/login" target="_top">Open Login</s-link>
+        </s-paragraph>
+        <s-paragraph>
+          <s-link href="/profile" target="_top">Open Profile</s-link>
         </s-paragraph>
       </s-section>
     </s-page>

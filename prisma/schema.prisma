@@ -33,14 +33,15 @@ model Session {
   refreshTokenExpires DateTime?
 }
 
-model StudentDiscount {
-  id             Int      @id @default(autoincrement())
-  shop           String
-  customerId     String
-  code           String
-  discountNodeId String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@unique([shop, customerId])
+model PortalUser {
+  id           Int      @id @default(autoincrement())
+  fullName     String
+  email        String   @unique
+  institute    String
+  role         String
+  roleOther    String?
+  phoneSa      String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
