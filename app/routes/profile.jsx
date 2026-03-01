@@ -1,5 +1,6 @@
 import { Form, Link, useActionData, useLoaderData } from "react-router";
 import prisma from "../db.server";
+import { unauthenticated } from "../shopify.server";
 import {
   clearUserSession,
   ensurePortalUserTable,
@@ -10,6 +11,120 @@ import {
   verifyPassword,
   withPathPrefix,
 } from "../portal-auth.server";
+
+const env = (globalThis.process && globalThis.process.env) || {};
+
+function normalizeShopDomain(input) {
+  if (!input) return "";
+  const trimmed = String(input).trim().toLowerCase();
+  if (!trimmed) return "";
+  try {
+    const withProtocol =
+      trimmed.startsWith("http://") || trimmed.startsWith("https://")
+        ? trimmed
+        : `https://${trimmed}`;
+    return new URL(withProtocol).hostname.trim().toLowerCase();
+  } catch {
+    return trimmed.replace(/^https?:\/\//, "").split("/")[0].trim().toLowerCase();
+  }
+}
+
+function splitName(fullName) {
+  const parts = String(fullName || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return { firstName: "", lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+async function getAdminForShop(shop) {
+  try {
+    const { admin } = await unauthenticated.admin(shop);
+    return admin;
+  } catch (e) {
+    const offlineSession = await prisma.session.findFirst({
+      where: { shop, isOnline: false },
+    });
+    const token = String(offlineSession?.accessToken || "").trim();
+    if (!token) throw e;
+    return {
+      graphql: async (query, opts = {}) =>
+        fetch(`https://${shop}/admin/api/2026-01/graphql.json`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Access-Token": token,
+          },
+          body: JSON.stringify({ query, variables: opts.variables || {} }),
+        }),
+    };
+  }
+}
+
+async function shopifyGraphql(admin, query, variables = {}) {
+  const response = await admin.graphql(query, { variables });
+  const bodyText = await response.text();
+  let body = null;
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    body = null;
+  }
+  if (!response.ok) throw new Error(`Shopify Admin HTTP ${response.status}: ${bodyText}`);
+  if (body?.errors?.length) throw new Error(body.errors.map((x) => x.message).join(", "));
+  return body;
+}
+
+async function syncShopifyCustomerProfile({ shop, email, fullName, institute, role, roleOther, phoneSa }) {
+  const admin = await getAdminForShop(shop);
+  const find = await shopifyGraphql(
+    admin,
+    `
+      query FindCustomerByEmail($q: String!) {
+        customers(first: 1, query: $q) {
+          edges { node { id } }
+        }
+      }
+    `,
+    { q: `email:${email}` }
+  );
+
+  const customerId = find?.data?.customers?.edges?.[0]?.node?.id;
+  if (!customerId) throw new Error("Shopify customer not found for this email.");
+
+  const { firstName, lastName } = splitName(fullName);
+  const noteLines = [
+    `Registered via student portal`,
+    `Institute: ${institute}`,
+    `Role: ${role}${role === "other" && roleOther ? ` (${roleOther})` : ""}`,
+  ];
+
+  const updated = await shopifyGraphql(
+    admin,
+    `
+      mutation CustomerUpdate($input: CustomerInput!) {
+        customerUpdate(input: $input) {
+          customer { id }
+          userErrors { field message }
+        }
+      }
+    `,
+    {
+      input: {
+        id: customerId,
+        firstName,
+        lastName: lastName || undefined,
+        phone: phoneSa || undefined,
+        note: noteLines.join("\n"),
+        tags: ["student_portal"],
+      },
+    }
+  );
+
+  const userErrors = updated?.data?.customerUpdate?.userErrors || [];
+  if (userErrors.length) throw new Error(userErrors.map((x) => x.message).join(", "));
+}
 
 export async function loader({ request }) {
   await ensurePortalUserTable();
@@ -38,12 +153,19 @@ export async function loader({ request }) {
 export async function action({ request }) {
   await ensurePortalUserTable();
   const userId = await requireUserId(request);
+  const url = new URL(request.url);
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
   if (intent === "logout") return clearUserSession(request);
 
   if (intent === "update-profile") {
+    const currentUser = await prisma.portalUser.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    if (!currentUser) return clearUserSession(request);
+
     const fullName = String(formData.get("fullName") || "").trim();
     const institute = String(formData.get("institute") || "").trim();
     const role = normalizeRole(formData.get("role"));
@@ -59,6 +181,30 @@ export async function action({ request }) {
     };
 
     if (Object.values(errors).some(Boolean)) return { ok: false, section: "profile", errors };
+
+    const shop = normalizeShopDomain(url.searchParams.get("shop") || env.LIVE_SHOP_DOMAIN);
+    if (!shop) {
+      return { ok: false, section: "profile", errors, message: "Missing shop context." };
+    }
+
+    try {
+      await syncShopifyCustomerProfile({
+        shop,
+        email: currentUser.email,
+        fullName,
+        institute,
+        role,
+        roleOther,
+        phoneSa,
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        section: "profile",
+        errors,
+        message: `Shopify sync failed: ${String(e?.message || e)}`,
+      };
+    }
 
     await prisma.portalUser.update({
       where: { id: userId },
