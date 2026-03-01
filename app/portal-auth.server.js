@@ -21,6 +21,23 @@ const storage = createCookieSessionStorage({
   },
 });
 
+export function getPathPrefix(request) {
+  try {
+    const url = new URL(request.url);
+    const pathPrefix = String(url.searchParams.get("path_prefix") || "").trim();
+    if (pathPrefix.startsWith("/apps/")) return pathPrefix.replace(/\/+$/, "");
+  } catch {
+    // ignore malformed URL and fall back to app routes
+  }
+  return "";
+}
+
+export function withPathPrefix(request, path) {
+  const normalizedPath = String(path || "").startsWith("/") ? String(path) : `/${String(path || "")}`;
+  const pathPrefix = getPathPrefix(request);
+  return pathPrefix ? `${pathPrefix}${normalizedPath}` : normalizedPath;
+}
+
 export function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -61,7 +78,7 @@ export async function getUserId(request) {
 
 export async function requireUserId(request) {
   const userId = await getUserId(request);
-  if (!userId) throw redirect("/login");
+  if (!userId) throw redirect(withPathPrefix(request, "/login"));
   return userId;
 }
 
@@ -75,7 +92,7 @@ export async function createUserSession(userId, redirectTo = "/profile") {
 
 export async function clearUserSession(request) {
   const session = await storage.getSession(request.headers.get("Cookie"));
-  return redirect("/login", {
+  return redirect(withPathPrefix(request, "/login"), {
     headers: { "Set-Cookie": await storage.destroySession(session) },
   });
 }

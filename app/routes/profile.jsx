@@ -8,6 +8,7 @@ import {
   normalizeSaudiPhone,
   requireUserId,
   verifyPassword,
+  withPathPrefix,
 } from "../portal-auth.server";
 
 export async function loader({ request }) {
@@ -28,7 +29,10 @@ export async function loader({ request }) {
   });
 
   if (!user) return clearUserSession(request);
-  return { user: { ...user, passwordHash: undefined } };
+  return {
+    pathPrefix: withPathPrefix(request, "").replace(/\/$/, ""),
+    user: { ...user, passwordHash: undefined },
+  };
 }
 
 export async function action({ request }) {
@@ -98,9 +102,10 @@ export async function action({ request }) {
 }
 
 export default function ProfilePage() {
-  const { user } = useLoaderData();
+  const { pathPrefix, user } = useLoaderData();
   const actionData = useActionData();
   const errors = actionData?.errors || {};
+  const linkBase = actionData?.pathPrefix ?? pathPrefix ?? "";
 
   return (
     <main style={{ maxWidth: 640, margin: "40px auto", padding: 16 }}>
@@ -204,7 +209,7 @@ export default function ProfilePage() {
       </Form>
 
       <p style={{ marginTop: 12 }}>
-        <Link to="/register">Register another account</Link>
+        <Link to={`${linkBase}/register`}>Register another account</Link>
       </p>
     </main>
   );
