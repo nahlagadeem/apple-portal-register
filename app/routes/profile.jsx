@@ -1,19 +1,37 @@
-import { Form, Link, useActionData, useLoaderData } from "react-router";
+import { Form, Link, redirect, useActionData, useLoaderData } from "react-router";
 import prisma from "../db.server";
 import {
   clearUserSession,
   ensurePortalUserTable,
+  getUserId,
   hashPassword,
   normalizeRole,
   normalizeSaudiPhone,
-  requireUserId,
   verifyPassword,
   withPathPrefix,
 } from "../portal-auth.server";
 
+function json(data, init = {}) {
+  return new Response(JSON.stringify(data), {
+    ...init,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...(init.headers || {}),
+    },
+  });
+}
+
 export async function loader({ request }) {
   await ensurePortalUserTable();
-  const userId = await requireUserId(request);
+  const url = new URL(request.url);
+  const wantsJson = url.searchParams.get("view") === "json";
+  const userId = await getUserId(request);
+
+  if (!userId) {
+    if (wantsJson) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    throw redirect(withPathPrefix(request, "/login"));
+  }
+
   const user = await prisma.portalUser.findUnique({
     where: { id: userId },
     select: {
@@ -28,20 +46,46 @@ export async function loader({ request }) {
     },
   });
 
-  if (!user) return clearUserSession(request);
-  return {
+  if (!user) {
+    if (wantsJson) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    return clearUserSession(request);
+  }
+
+  const payload = {
     pathPrefix: withPathPrefix(request, "").replace(/\/$/, ""),
     user: { ...user, passwordHash: undefined },
   };
+
+  if (wantsJson) return json({ ok: true, user: payload.user });
+  return payload;
 }
 
 export async function action({ request }) {
   await ensurePortalUserTable();
-  const userId = await requireUserId(request);
+  const url = new URL(request.url);
+  const wantsJson = url.searchParams.get("view") === "json";
+  const userId = await getUserId(request);
+
+  if (!userId) {
+    if (wantsJson) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    throw redirect(withPathPrefix(request, "/login"));
+  }
+
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
-  if (intent === "logout") return clearUserSession(request);
+  if (intent === "logout") {
+    const response = await clearUserSession(request);
+    if (!wantsJson) return response;
+    return json(
+      { ok: true, loggedOut: true },
+      {
+        headers: {
+          "Set-Cookie": response.headers.get("Set-Cookie") || "",
+        },
+      }
+    );
+  }
 
   if (intent === "update-profile") {
     const fullName = String(formData.get("fullName") || "").trim();
@@ -58,7 +102,10 @@ export async function action({ request }) {
       phoneSa: phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "",
     };
 
-    if (Object.values(errors).some(Boolean)) return { ok: false, section: "profile", errors };
+    if (Object.values(errors).some(Boolean)) {
+      if (wantsJson) return json({ ok: false, section: "profile", errors }, { status: 400 });
+      return { ok: false, section: "profile", errors };
+    }
 
     await prisma.portalUser.update({
       where: { id: userId },
@@ -71,6 +118,7 @@ export async function action({ request }) {
       },
     });
 
+    if (wantsJson) return json({ ok: true, section: "profile", message: "Profile updated." });
     return { ok: true, section: "profile", message: "Profile updated." };
   }
 
@@ -80,7 +128,10 @@ export async function action({ request }) {
     const confirmPassword = String(formData.get("confirmPassword") || "");
 
     const user = await prisma.portalUser.findUnique({ where: { id: userId } });
-    if (!user) return clearUserSession(request);
+    if (!user) {
+      if (wantsJson) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+      return clearUserSession(request);
+    }
 
     const errors = {
       currentPassword: verifyPassword(currentPassword, user.passwordHash) ? "" : "Current password is incorrect.",
@@ -88,16 +139,21 @@ export async function action({ request }) {
       confirmPassword: newPassword === confirmPassword ? "" : "Passwords do not match.",
     };
 
-    if (Object.values(errors).some(Boolean)) return { ok: false, section: "password", errors };
+    if (Object.values(errors).some(Boolean)) {
+      if (wantsJson) return json({ ok: false, section: "password", errors }, { status: 400 });
+      return { ok: false, section: "password", errors };
+    }
 
     await prisma.portalUser.update({
       where: { id: userId },
       data: { passwordHash: hashPassword(newPassword) },
     });
 
+    if (wantsJson) return json({ ok: true, section: "password", message: "Password updated." });
     return { ok: true, section: "password", message: "Password updated." };
   }
 
+  if (wantsJson) return json({ ok: false, section: "general", message: "Unknown action." }, { status: 400 });
   return { ok: false, section: "general", message: "Unknown action." };
 }
 
