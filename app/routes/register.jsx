@@ -18,6 +18,15 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function normalizeReturnTo(value, fallback = "/pages/student-profile") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  if (!raw.startsWith("/")) return fallback;
+  if (raw.startsWith("//")) return fallback;
+  if (raw.includes("://")) return fallback;
+  return raw;
+}
+
 function normalizeShopDomain(input) {
   if (!input) return "";
   const trimmed = String(input).trim().toLowerCase();
@@ -151,7 +160,9 @@ async function ensureShopifyCustomer({
 export async function loader({ request }) {
   const userId = await getUserId(request);
   const pathPrefix = withPathPrefix(request, "").replace(/\/$/, "");
-  if (userId) throw redirect(withPathPrefix(request, "/profile"));
+  const url = new URL(request.url);
+  const returnTo = normalizeReturnTo(url.searchParams.get("return_to"));
+  if (userId) throw redirect(returnTo);
   return { pathPrefix };
 }
 
@@ -178,6 +189,7 @@ export async function action({ request }) {
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
+    const returnTo = normalizeReturnTo(formData.get("return_to"));
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
 
@@ -229,7 +241,7 @@ export async function action({ request }) {
       },
     });
 
-    return createUserSession(user.id, withPathPrefix(request, "/profile"));
+    return createUserSession(user.id, returnTo);
   } catch (e) {
     errors.general = `Registration failed. ${String(e?.message || e)}`;
     return { ok: false, errors, pathPrefix };
