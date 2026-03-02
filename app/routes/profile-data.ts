@@ -335,6 +335,19 @@ async function resolvePortalUserFromSessionOrShopify(
 
   if (!shop) return null;
 
+  if (customerEmail && !loggedInCustomerId) {
+    const user = await prisma.portalUser.findUnique({ where: { email: customerEmail } });
+    if (user) {
+      return {
+        user: user as PortalUserRecord,
+        shop,
+        customerId: "",
+        defaultAddress: null,
+        addresses: [],
+      };
+    }
+  }
+
   if (!loggedInCustomerId && customerEmail) {
     try {
       const admin = await getAdminForShop(shop);
@@ -358,7 +371,15 @@ async function resolvePortalUserFromSessionOrShopify(
         addresses: sortAddressesWithDefaultFirst(addresses, defaultAddressId),
       };
     } catch {
-      return null;
+      const user = await prisma.portalUser.findUnique({ where: { email: customerEmail } });
+      if (!user) return null;
+      return {
+        user: user as PortalUserRecord,
+        shop,
+        customerId: "",
+        defaultAddress: null,
+        addresses: [],
+      };
     }
   }
 
