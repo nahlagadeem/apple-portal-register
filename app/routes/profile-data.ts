@@ -135,7 +135,12 @@ async function getAdminForShop(shop: string) {
     const offlineSession = await prisma.session.findFirst({
       where: { shop, isOnline: false },
     });
-    const token = String(offlineSession?.accessToken || "").trim();
+    const token = String(
+      offlineSession?.accessToken ||
+        env.SHOPIFY_ADMIN_TOKEN ||
+        env.SHOPIFY_ADMIN_API_ACCESS_TOKEN ||
+        ""
+    ).trim();
     if (!token) throw e;
 
     return {
@@ -412,7 +417,7 @@ async function resolvePortalUserFromSessionOrShopify(
     return {
       user: user as PortalUserRecord,
       shop,
-      customerId: "",
+      customerId: loggedInCustomerId ? `gid://shopify/Customer/${loggedInCustomerId}` : "",
       defaultAddress: null,
       addresses: [],
     };
