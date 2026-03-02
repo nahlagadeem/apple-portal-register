@@ -13,6 +13,17 @@ import {
 } from "../portal-auth.server";
 
 const env = (globalThis.process && globalThis.process.env) || {};
+const JSON_HEADERS = {
+  "Content-Type": "application/json; charset=utf-8",
+  "Cache-Control": "no-store",
+};
+
+function json(data, init = {}) {
+  return new Response(JSON.stringify(data), {
+    ...init,
+    headers: { ...JSON_HEADERS, ...(init.headers || {}) },
+  });
+}
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -40,6 +51,12 @@ function normalizeShopDomain(input) {
   } catch {
     return trimmed.replace(/^https?:\/\//, "").split("/")[0].trim().toLowerCase();
   }
+}
+
+function wantsJson(request) {
+  const accept = String(request.headers.get("accept") || "").toLowerCase();
+  const requestedWith = String(request.headers.get("x-requested-with") || "").toLowerCase();
+  return accept.includes("application/json") || requestedWith === "xmlhttprequest";
 }
 
 function splitName(fullName) {
@@ -167,6 +184,7 @@ export async function loader({ request }) {
 }
 
 export async function action({ request }) {
+  const jsonMode = wantsJson(request);
   const pathPrefix = withPathPrefix(request, "").replace(/\/$/, "");
   const errors = {
     fullName: "",
@@ -202,11 +220,15 @@ export async function action({ request }) {
     errors.password = password.length >= 6 ? "" : "Password must be at least 6 characters.";
     errors.confirmPassword = password === confirmPassword ? "" : "Passwords do not match.";
 
-    if (Object.values(errors).some(Boolean)) return { ok: false, errors, pathPrefix };
+    if (Object.values(errors).some(Boolean)) {
+      if (jsonMode) return json({ ok: false, errors }, { status: 400 });
+      return { ok: false, errors, pathPrefix };
+    }
 
     const existing = await prisma.portalUser.findUnique({ where: { email } });
     if (existing) {
       errors.email = "Email is already registered.";
+      if (jsonMode) return json({ ok: false, errors }, { status: 409 });
       return { ok: false, errors, pathPrefix };
     }
 
@@ -216,6 +238,7 @@ export async function action({ request }) {
     );
     if (!shop) {
       errors.general = "Missing shop context. Open this form from your storefront.";
+      if (jsonMode) return json({ ok: false, errors }, { status: 400 });
       return { ok: false, errors, pathPrefix };
     }
 
@@ -241,9 +264,17 @@ export async function action({ request }) {
       },
     });
 
+    if (jsonMode) {
+      return json({
+        ok: true,
+        redirectUrl: `https://${shop}/account/login`,
+      });
+    }
+
     return createUserSession(user.id, returnTo);
   } catch (e) {
     errors.general = `Registration failed. ${String(e?.message || e)}`;
+    if (jsonMode) return json({ ok: false, errors }, { status: 500 });
     return { ok: false, errors, pathPrefix };
   }
 }
