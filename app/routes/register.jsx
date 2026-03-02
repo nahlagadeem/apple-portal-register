@@ -54,9 +54,11 @@ function normalizeShopDomain(input) {
 }
 
 function wantsJson(request) {
+  const url = new URL(request.url);
   const accept = String(request.headers.get("accept") || "").toLowerCase();
   const requestedWith = String(request.headers.get("x-requested-with") || "").toLowerCase();
-  return accept.includes("application/json") || requestedWith === "xmlhttprequest";
+  const forceJson = url.searchParams.get("response") === "json" || url.searchParams.get("ajax") === "1";
+  return forceJson || accept.includes("application/json") || requestedWith === "xmlhttprequest";
 }
 
 function splitName(fullName) {
