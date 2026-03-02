@@ -68,6 +68,9 @@ async function resolveShopAndCustomerContext(request: Request) {
   const queryCustomerId = normalizeCustomerId(
     url.searchParams.get("logged_in_customer_id") || url.searchParams.get("customer_id")
   );
+  const queryCustomerEmail = String(url.searchParams.get("customer_email") || "")
+    .trim()
+    .toLowerCase();
 
   const headerShop = normalizeShopDomain(
     request.headers.get("x-shopify-shop-domain") || request.headers.get("x-shop-domain")
@@ -77,9 +80,15 @@ async function resolveShopAndCustomerContext(request: Request) {
       request.headers.get("x-shopify-customer-id") ||
       request.headers.get("x-customer-id")
   );
+  const headerCustomerEmail = String(
+    request.headers.get("x-shopify-customer-email") || request.headers.get("x-customer-email") || ""
+  )
+    .trim()
+    .toLowerCase();
 
   let proxyShop = "";
   let proxyCustomerId = "";
+  let proxyCustomerEmail = "";
   try {
     const proxy = (await authenticate.public.appProxy(request)) as any;
     const proxySession = proxy?.session as any;
@@ -93,6 +102,11 @@ async function resolveShopAndCustomerContext(request: Request) {
         proxySession?.onlineAccessInfo?.associated_user?.id ||
         proxy?.loggedInCustomerId
     );
+    proxyCustomerEmail = String(
+      proxySession?.onlineAccessInfo?.associated_user?.email || proxy?.customerEmail || ""
+    )
+      .trim()
+      .toLowerCase();
   } catch {
     // continue with query/header fallback paths
   }
@@ -100,6 +114,7 @@ async function resolveShopAndCustomerContext(request: Request) {
   return {
     shop: queryShop || headerShop || proxyShop || normalizeShopDomain(env.LIVE_SHOP_DOMAIN),
     loggedInCustomerId: queryCustomerId || headerCustomerId || proxyCustomerId,
+    customerEmail: queryCustomerEmail || headerCustomerEmail || proxyCustomerEmail,
   };
 }
 
@@ -274,7 +289,7 @@ async function resolvePortalUserFromSessionOrShopify(
   defaultAddress: ShopifyAddress | null;
   addresses: ShopifyAddress[];
 } | null> {
-  const { shop, loggedInCustomerId } = await resolveShopAndCustomerContext(request);
+  const { shop, loggedInCustomerId, customerEmail } = await resolveShopAndCustomerContext(request);
 
   const sessionUserId = await getUserId(request);
   if (sessionUserId) {
@@ -318,7 +333,36 @@ async function resolvePortalUserFromSessionOrShopify(
     }
   }
 
-  if (!shop || !loggedInCustomerId) return null;
+  if (!shop) return null;
+
+  if (!loggedInCustomerId && customerEmail) {
+    try {
+      const admin = await getAdminForShop(shop);
+      const customer = await getShopifyCustomerByEmail(admin, customerEmail);
+      const normalizedEmail = String(customer?.email || customerEmail).trim().toLowerCase();
+      if (!normalizedEmail) return null;
+
+      const user = await prisma.portalUser.findUnique({ where: { email: normalizedEmail } });
+      if (!user) return null;
+
+      const defaultAddress = customer?.defaultAddress ? cleanAddress(customer.defaultAddress) : null;
+      const defaultAddressId = String(defaultAddress?.id || "");
+      const addresses = Array.isArray(customer?.addresses?.edges)
+        ? customer.addresses.edges.map((edge: any) => cleanAddress(edge?.node))
+        : [];
+      return {
+        user: user as PortalUserRecord,
+        shop,
+        customerId: String(customer?.id || ""),
+        defaultAddress,
+        addresses: sortAddressesWithDefaultFirst(addresses, defaultAddressId),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  if (!loggedInCustomerId) return null;
 
   try {
     const admin = await getAdminForShop(shop);
