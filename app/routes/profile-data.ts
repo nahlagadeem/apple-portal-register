@@ -1,6 +1,7 @@
 import prisma from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { clearUserSession, ensurePortalUserTable, getUserId, hashPassword, normalizeRole, normalizeSaudiPhone, verifyPassword } from "../portal-auth.server";
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
@@ -272,25 +273,29 @@ async function resolvePortalUserFromSessionOrShopify(
 
   if (!shop || !loggedInCustomerId) return null;
 
-  const admin = await getAdminForShop(shop);
-  const customer = await getShopifyCustomerById(admin, loggedInCustomerId);
-  const customerEmail = String(customer?.email || "").trim().toLowerCase();
-  if (!customerEmail) return null;
+  try {
+    const admin = await getAdminForShop(shop);
+    const customer = await getShopifyCustomerById(admin, loggedInCustomerId);
+    const customerEmail = String(customer?.email || "").trim().toLowerCase();
+    if (!customerEmail) return null;
 
-  const user = await prisma.portalUser.findUnique({ where: { email: customerEmail } });
-  if (!user) return null;
-  const defaultAddress = customer?.defaultAddress ? cleanAddress(customer.defaultAddress) : null;
-  const defaultAddressId = String(defaultAddress?.id || "");
-  const addresses = Array.isArray(customer?.addresses?.edges)
-    ? customer.addresses.edges.map((edge: any) => cleanAddress(edge?.node))
-    : [];
-  return {
-    user: user as PortalUserRecord,
-    shop,
-    customerId: String(customer?.id || ""),
-    defaultAddress,
-    addresses: sortAddressesWithDefaultFirst(addresses, defaultAddressId),
-  };
+    const user = await prisma.portalUser.findUnique({ where: { email: customerEmail } });
+    if (!user) return null;
+    const defaultAddress = customer?.defaultAddress ? cleanAddress(customer.defaultAddress) : null;
+    const defaultAddressId = String(defaultAddress?.id || "");
+    const addresses = Array.isArray(customer?.addresses?.edges)
+      ? customer.addresses.edges.map((edge: any) => cleanAddress(edge?.node))
+      : [];
+    return {
+      user: user as PortalUserRecord,
+      shop,
+      customerId: String(customer?.id || ""),
+      defaultAddress,
+      addresses: sortAddressesWithDefaultFirst(addresses, defaultAddressId),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function syncShopifyCustomerProfile({
