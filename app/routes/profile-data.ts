@@ -406,7 +406,16 @@ async function resolvePortalUserFromSessionOrShopify(
       addresses: sortAddressesWithDefaultFirst(addresses, defaultAddressId),
     };
   } catch {
-    return null;
+    if (!customerEmail) return null;
+    const user = await prisma.portalUser.findUnique({ where: { email: customerEmail } });
+    if (!user) return null;
+    return {
+      user: user as PortalUserRecord,
+      shop,
+      customerId: "",
+      defaultAddress: null,
+      addresses: [],
+    };
   }
 }
 
