@@ -17,12 +17,15 @@ type PortalUserRecord = {
 };
 
 type ShopifyAddress = {
+  id?: string | null;
+  name?: string | null;
   address1?: string | null;
   address2?: string | null;
   city?: string | null;
   province?: string | null;
   zip?: string | null;
   country?: string | null;
+  phone?: string | null;
 };
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -98,6 +101,29 @@ async function shopifyGraphql(admin: any, query: string, variables: Record<strin
   return body;
 }
 
+function cleanAddress(address: any): ShopifyAddress {
+  return {
+    id: String(address?.id || ""),
+    name: String(address?.name || ""),
+    address1: String(address?.address1 || ""),
+    address2: String(address?.address2 || ""),
+    city: String(address?.city || ""),
+    province: String(address?.province || ""),
+    zip: String(address?.zip || ""),
+    country: String(address?.country || ""),
+    phone: String(address?.phone || ""),
+  };
+}
+
+function sortAddressesWithDefaultFirst(addresses: ShopifyAddress[], defaultAddressId: string) {
+  if (!defaultAddressId) return addresses;
+  return [...addresses].sort((a, b) => {
+    const aDefault = String(a.id || "") === defaultAddressId ? 1 : 0;
+    const bDefault = String(b.id || "") === defaultAddressId ? 1 : 0;
+    return bDefault - aDefault;
+  });
+}
+
 async function getShopifyCustomerById(admin: any, loggedInCustomerId: string) {
   const customerGid = `gid://shopify/Customer/${loggedInCustomerId}`;
   const customerResp = await shopifyGraphql(
@@ -108,12 +134,30 @@ async function getShopifyCustomerById(admin: any, loggedInCustomerId: string) {
           id
           email
           defaultAddress {
+            id
+            name
             address1
             address2
             city
             province
             zip
             country
+            phone
+          }
+          addresses(first: 50) {
+            edges {
+              node {
+                id
+                name
+                address1
+                address2
+                city
+                province
+                zip
+                country
+                phone
+              }
+            }
           }
         }
       }
@@ -135,12 +179,30 @@ async function getShopifyCustomerByEmail(admin: any, email: string) {
               id
               email
               defaultAddress {
+                id
+                name
                 address1
                 address2
                 city
                 province
                 zip
                 country
+                phone
+              }
+              addresses(first: 50) {
+                edges {
+                  node {
+                    id
+                    name
+                    address1
+                    address2
+                    city
+                    province
+                    zip
+                    country
+                    phone
+                  }
+                }
               }
             }
           }
@@ -155,7 +217,13 @@ async function getShopifyCustomerByEmail(admin: any, email: string) {
 
 async function resolvePortalUserFromSessionOrShopify(
   request: Request
-): Promise<{ user: PortalUserRecord; shop: string; address: ShopifyAddress | null } | null> {
+): Promise<{
+  user: PortalUserRecord;
+  shop: string;
+  customerId: string;
+  defaultAddress: ShopifyAddress | null;
+  addresses: ShopifyAddress[];
+} | null> {
   const url = new URL(request.url);
   const shop = normalizeShopDomain(url.searchParams.get("shop") || env.LIVE_SHOP_DOMAIN);
   const loggedInCustomerId = String(url.searchParams.get("logged_in_customer_id") || "").trim();
@@ -170,12 +238,35 @@ async function resolvePortalUserFromSessionOrShopify(
           const customer = loggedInCustomerId
             ? await getShopifyCustomerById(admin, loggedInCustomerId)
             : await getShopifyCustomerByEmail(admin, user.email);
-          return { user: user as PortalUserRecord, shop, address: customer?.defaultAddress ?? null };
+          const defaultAddress = customer?.defaultAddress ? cleanAddress(customer.defaultAddress) : null;
+          const defaultAddressId = String(defaultAddress?.id || "");
+          const addresses = Array.isArray(customer?.addresses?.edges)
+            ? customer.addresses.edges.map((edge: any) => cleanAddress(edge?.node))
+            : [];
+          return {
+            user: user as PortalUserRecord,
+            shop,
+            customerId: String(customer?.id || ""),
+            defaultAddress,
+            addresses: sortAddressesWithDefaultFirst(addresses, defaultAddressId),
+          };
         } catch {
-          return { user: user as PortalUserRecord, shop, address: null };
+          return {
+            user: user as PortalUserRecord,
+            shop,
+            customerId: "",
+            defaultAddress: null,
+            addresses: [],
+          };
         }
       }
-      return { user: user as PortalUserRecord, shop: "", address: null };
+      return {
+        user: user as PortalUserRecord,
+        shop: "",
+        customerId: "",
+        defaultAddress: null,
+        addresses: [],
+      };
     }
   }
 
@@ -188,53 +279,39 @@ async function resolvePortalUserFromSessionOrShopify(
 
   const user = await prisma.portalUser.findUnique({ where: { email: customerEmail } });
   if (!user) return null;
-  return { user: user as PortalUserRecord, shop, address: customer?.defaultAddress ?? null };
+  const defaultAddress = customer?.defaultAddress ? cleanAddress(customer.defaultAddress) : null;
+  const defaultAddressId = String(defaultAddress?.id || "");
+  const addresses = Array.isArray(customer?.addresses?.edges)
+    ? customer.addresses.edges.map((edge: any) => cleanAddress(edge?.node))
+    : [];
+  return {
+    user: user as PortalUserRecord,
+    shop,
+    customerId: String(customer?.id || ""),
+    defaultAddress,
+    addresses: sortAddressesWithDefaultFirst(addresses, defaultAddressId),
+  };
 }
 
 async function syncShopifyCustomerProfile({
   shop,
-  email,
+  customerId,
   fullName,
   institute,
   role,
   roleOther,
   phoneSa,
-  address1,
-  address2,
-  city,
-  province,
-  zip,
-  country,
 }: {
   shop: string;
-  email: string;
+  customerId: string;
   fullName: string;
   institute: string;
   role: string;
   roleOther: string;
   phoneSa: string;
-  address1: string;
-  address2: string;
-  city: string;
-  province: string;
-  zip: string;
-  country: string;
 }) {
-  if (!shop) return;
+  if (!shop || !customerId) return;
   const admin = await getAdminForShop(shop);
-  const found = await shopifyGraphql(
-    admin,
-    `
-      query FindCustomerByEmail($q: String!) {
-        customers(first: 1, query: $q) {
-          edges { node { id } }
-        }
-      }
-    `,
-    { q: `email:${email}` }
-  );
-  const customerId = found?.data?.customers?.edges?.[0]?.node?.id;
-  if (!customerId) return;
 
   const { firstName, lastName } = splitName(fullName);
   const noteLines = [
@@ -261,20 +338,51 @@ async function syncShopifyCustomerProfile({
         phone: phoneSa || undefined,
         note: noteLines.join("\n"),
         tags: ["student_portal"],
-        addresses: [
-          {
-            address1: address1 || undefined,
-            address2: address2 || undefined,
-            city: city || undefined,
-            province: province || undefined,
-            zip: zip || undefined,
-            country: country || undefined,
-            phone: phoneSa || undefined,
-          },
-        ],
       },
     }
   );
+}
+
+function readAddressInput(formData: FormData) {
+  return {
+    address1: String(formData.get("address1") || "").trim(),
+    address2: String(formData.get("address2") || "").trim(),
+    city: String(formData.get("city") || "").trim(),
+    province: String(formData.get("province") || "").trim(),
+    zip: String(formData.get("zip") || "").trim(),
+    country: String(formData.get("country") || "").trim(),
+    phone: normalizeSaudiPhone(formData.get("phoneSa")) || undefined,
+  };
+}
+
+function validateAddressInput(address: ReturnType<typeof readAddressInput>) {
+  return {
+    address1: address.address1 ? "" : "Address line 1 is required.",
+    city: address.city ? "" : "City is required.",
+    country: address.country ? "" : "Country is required.",
+  };
+}
+
+async function addCustomerAddress(admin: any, customerId: string, address: ReturnType<typeof readAddressInput>) {
+  const result = await shopifyGraphql(
+    admin,
+    `
+      mutation AddCustomerAddress($customerId: ID!, $address: MailingAddressInput!) {
+        customerAddressCreate(customerId: $customerId, address: $address) {
+          customerAddress {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `,
+    { customerId, address }
+  );
+  const errors = result?.data?.customerAddressCreate?.userErrors || [];
+  if (errors.length) throw new Error(errors.map((x: any) => x.message).join(", "));
 }
 
 export async function loader({ request }: { request: Request }) {
@@ -282,7 +390,7 @@ export async function loader({ request }: { request: Request }) {
   const resolved = await resolvePortalUserFromSessionOrShopify(request);
   if (!resolved) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const { user, address } = resolved;
+  const { user, defaultAddress, addresses } = resolved;
   return json({
     ok: true,
     user: {
@@ -293,14 +401,8 @@ export async function loader({ request }: { request: Request }) {
       role: user.role,
       roleOther: user.roleOther,
       phoneSa: user.phoneSa,
-      address: {
-        address1: address?.address1 || "",
-        address2: address?.address2 || "",
-        city: address?.city || "",
-        province: address?.province || "",
-        zip: address?.zip || "",
-        country: address?.country || "",
-      },
+      defaultAddress,
+      addresses,
     },
   });
 }
@@ -310,7 +412,7 @@ export async function action({ request }: { request: Request }) {
   const resolved = await resolvePortalUserFromSessionOrShopify(request);
   if (!resolved) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const { user, shop } = resolved;
+  const { user, shop, customerId } = resolved;
   const formData = await request.formData();
   const intent = String(formData.get("intent") || "");
 
@@ -332,12 +434,6 @@ export async function action({ request }: { request: Request }) {
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
-    const address1 = String(formData.get("address1") || "").trim();
-    const address2 = String(formData.get("address2") || "").trim();
-    const city = String(formData.get("city") || "").trim();
-    const province = String(formData.get("province") || "").trim();
-    const zip = String(formData.get("zip") || "").trim();
-    const country = String(formData.get("country") || "").trim();
 
     const errors = {
       fullName: fullName ? "" : "Full name is required.",
@@ -356,18 +452,12 @@ export async function action({ request }: { request: Request }) {
 
     await syncShopifyCustomerProfile({
       shop,
-      email: user.email,
+      customerId,
       fullName,
       institute,
       role,
       roleOther,
       phoneSa: phoneSa || "",
-      address1,
-      address2,
-      city,
-      province,
-      zip,
-      country,
     });
 
     await prisma.portalUser.update({
@@ -382,6 +472,22 @@ export async function action({ request }: { request: Request }) {
     });
 
     return json({ ok: true, section: "profile", message: "Profile updated." });
+  }
+
+  if (intent === "add-address") {
+    if (!shop || !customerId) {
+      return json({ ok: false, section: "address", message: "Missing shop context for address update." }, { status: 400 });
+    }
+
+    const address = readAddressInput(formData);
+    const errors = validateAddressInput(address);
+    if (Object.values(errors).some(Boolean)) {
+      return json({ ok: false, section: "address", errors }, { status: 400 });
+    }
+
+    const admin = await getAdminForShop(shop);
+    await addCustomerAddress(admin, customerId, address);
+    return json({ ok: true, section: "address", message: "Address added." });
   }
 
   if (intent === "change-password") {
