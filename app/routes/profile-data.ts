@@ -1,5 +1,5 @@
 import prisma from "../db.server";
-import { unauthenticated } from "../shopify.server";
+import { authenticate, unauthenticated } from "../shopify.server";
 import { clearUserSession, ensurePortalUserTable, getUserId, hashPassword, normalizeRole, normalizeSaudiPhone, verifyPassword } from "../portal-auth.server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -52,6 +52,55 @@ function normalizeShopDomain(input: string | null | undefined): string {
   } catch {
     return trimmed.replace(/^https?:\/\//, "").split("/")[0].trim().toLowerCase();
   }
+}
+
+function normalizeCustomerId(input: string | null | undefined): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  const gidMatch = raw.match(/\/(\d+)$/);
+  if (gidMatch?.[1]) return gidMatch[1];
+  return raw.replace(/\D/g, "") || raw;
+}
+
+async function resolveShopAndCustomerContext(request: Request) {
+  const url = new URL(request.url);
+  const queryShop = normalizeShopDomain(url.searchParams.get("shop"));
+  const queryCustomerId = normalizeCustomerId(
+    url.searchParams.get("logged_in_customer_id") || url.searchParams.get("customer_id")
+  );
+
+  const headerShop = normalizeShopDomain(
+    request.headers.get("x-shopify-shop-domain") || request.headers.get("x-shop-domain")
+  );
+  const headerCustomerId = normalizeCustomerId(
+    request.headers.get("x-shopify-logged-in-customer-id") ||
+      request.headers.get("x-shopify-customer-id") ||
+      request.headers.get("x-customer-id")
+  );
+
+  let proxyShop = "";
+  let proxyCustomerId = "";
+  try {
+    const proxy = (await authenticate.public.appProxy(request)) as any;
+    const proxySession = proxy?.session as any;
+    proxyShop = normalizeShopDomain(
+      proxySession?.shop ||
+        proxySession?.destination?.replace(/^https?:\/\//, "") ||
+        proxy?.shop
+    );
+    proxyCustomerId = normalizeCustomerId(
+      proxySession?.customerId ||
+        proxySession?.onlineAccessInfo?.associated_user?.id ||
+        proxy?.loggedInCustomerId
+    );
+  } catch {
+    // continue with query/header fallback paths
+  }
+
+  return {
+    shop: queryShop || headerShop || proxyShop || normalizeShopDomain(env.LIVE_SHOP_DOMAIN),
+    loggedInCustomerId: queryCustomerId || headerCustomerId || proxyCustomerId,
+  };
 }
 
 function splitName(fullName: string) {
@@ -225,9 +274,7 @@ async function resolvePortalUserFromSessionOrShopify(
   defaultAddress: ShopifyAddress | null;
   addresses: ShopifyAddress[];
 } | null> {
-  const url = new URL(request.url);
-  const shop = normalizeShopDomain(url.searchParams.get("shop") || env.LIVE_SHOP_DOMAIN);
-  const loggedInCustomerId = String(url.searchParams.get("logged_in_customer_id") || "").trim();
+  const { shop, loggedInCustomerId } = await resolveShopAndCustomerContext(request);
 
   const sessionUserId = await getUserId(request);
   if (sessionUserId) {
