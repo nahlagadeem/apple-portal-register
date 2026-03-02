@@ -16,6 +16,15 @@ type PortalUserRecord = {
   passwordHash: string;
 };
 
+type ShopifyAddress = {
+  address1?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  province?: string | null;
+  zip?: string | null;
+  country?: string | null;
+};
+
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
     ...init,
@@ -89,19 +98,7 @@ async function shopifyGraphql(admin: any, query: string, variables: Record<strin
   return body;
 }
 
-async function resolvePortalUserFromSessionOrShopify(request: Request): Promise<{ user: PortalUserRecord; shop: string } | null> {
-  const sessionUserId = await getUserId(request);
-  if (sessionUserId) {
-    const user = await prisma.portalUser.findUnique({ where: { id: sessionUserId } });
-    if (user) return { user: user as PortalUserRecord, shop: "" };
-  }
-
-  const url = new URL(request.url);
-  const shop = normalizeShopDomain(url.searchParams.get("shop") || env.LIVE_SHOP_DOMAIN);
-  const loggedInCustomerId = String(url.searchParams.get("logged_in_customer_id") || "").trim();
-  if (!shop || !loggedInCustomerId) return null;
-
-  const admin = await getAdminForShop(shop);
+async function getShopifyCustomerById(admin: any, loggedInCustomerId: string) {
   const customerGid = `gid://shopify/Customer/${loggedInCustomerId}`;
   const customerResp = await shopifyGraphql(
     admin,
@@ -110,18 +107,88 @@ async function resolvePortalUserFromSessionOrShopify(request: Request): Promise<
         customer(id: $id) {
           id
           email
+          defaultAddress {
+            address1
+            address2
+            city
+            province
+            zip
+            country
+          }
         }
       }
     `,
     { id: customerGid }
   );
 
-  const customerEmail = String(customerResp?.data?.customer?.email || "").trim().toLowerCase();
+  return customerResp?.data?.customer ?? null;
+}
+
+async function getShopifyCustomerByEmail(admin: any, email: string) {
+  const found = await shopifyGraphql(
+    admin,
+    `
+      query FindCustomerByEmail($q: String!) {
+        customers(first: 1, query: $q) {
+          edges {
+            node {
+              id
+              email
+              defaultAddress {
+                address1
+                address2
+                city
+                province
+                zip
+                country
+              }
+            }
+          }
+        }
+      }
+    `,
+    { q: `email:${email}` }
+  );
+
+  return found?.data?.customers?.edges?.[0]?.node ?? null;
+}
+
+async function resolvePortalUserFromSessionOrShopify(
+  request: Request
+): Promise<{ user: PortalUserRecord; shop: string; address: ShopifyAddress | null } | null> {
+  const url = new URL(request.url);
+  const shop = normalizeShopDomain(url.searchParams.get("shop") || env.LIVE_SHOP_DOMAIN);
+  const loggedInCustomerId = String(url.searchParams.get("logged_in_customer_id") || "").trim();
+
+  const sessionUserId = await getUserId(request);
+  if (sessionUserId) {
+    const user = await prisma.portalUser.findUnique({ where: { id: sessionUserId } });
+    if (user) {
+      if (shop) {
+        try {
+          const admin = await getAdminForShop(shop);
+          const customer = loggedInCustomerId
+            ? await getShopifyCustomerById(admin, loggedInCustomerId)
+            : await getShopifyCustomerByEmail(admin, user.email);
+          return { user: user as PortalUserRecord, shop, address: customer?.defaultAddress ?? null };
+        } catch {
+          return { user: user as PortalUserRecord, shop, address: null };
+        }
+      }
+      return { user: user as PortalUserRecord, shop: "", address: null };
+    }
+  }
+
+  if (!shop || !loggedInCustomerId) return null;
+
+  const admin = await getAdminForShop(shop);
+  const customer = await getShopifyCustomerById(admin, loggedInCustomerId);
+  const customerEmail = String(customer?.email || "").trim().toLowerCase();
   if (!customerEmail) return null;
 
   const user = await prisma.portalUser.findUnique({ where: { email: customerEmail } });
   if (!user) return null;
-  return { user: user as PortalUserRecord, shop };
+  return { user: user as PortalUserRecord, shop, address: customer?.defaultAddress ?? null };
 }
 
 async function syncShopifyCustomerProfile({
@@ -132,6 +199,12 @@ async function syncShopifyCustomerProfile({
   role,
   roleOther,
   phoneSa,
+  address1,
+  address2,
+  city,
+  province,
+  zip,
+  country,
 }: {
   shop: string;
   email: string;
@@ -140,6 +213,12 @@ async function syncShopifyCustomerProfile({
   role: string;
   roleOther: string;
   phoneSa: string;
+  address1: string;
+  address2: string;
+  city: string;
+  province: string;
+  zip: string;
+  country: string;
 }) {
   if (!shop) return;
   const admin = await getAdminForShop(shop);
@@ -182,6 +261,17 @@ async function syncShopifyCustomerProfile({
         phone: phoneSa || undefined,
         note: noteLines.join("\n"),
         tags: ["student_portal"],
+        addresses: [
+          {
+            address1: address1 || undefined,
+            address2: address2 || undefined,
+            city: city || undefined,
+            province: province || undefined,
+            zip: zip || undefined,
+            country: country || undefined,
+            phone: phoneSa || undefined,
+          },
+        ],
       },
     }
   );
@@ -192,7 +282,7 @@ export async function loader({ request }: { request: Request }) {
   const resolved = await resolvePortalUserFromSessionOrShopify(request);
   if (!resolved) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
-  const { user } = resolved;
+  const { user, address } = resolved;
   return json({
     ok: true,
     user: {
@@ -203,6 +293,14 @@ export async function loader({ request }: { request: Request }) {
       role: user.role,
       roleOther: user.roleOther,
       phoneSa: user.phoneSa,
+      address: {
+        address1: address?.address1 || "",
+        address2: address?.address2 || "",
+        city: address?.city || "",
+        province: address?.province || "",
+        zip: address?.zip || "",
+        country: address?.country || "",
+      },
     },
   });
 }
@@ -234,6 +332,12 @@ export async function action({ request }: { request: Request }) {
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
+    const address1 = String(formData.get("address1") || "").trim();
+    const address2 = String(formData.get("address2") || "").trim();
+    const city = String(formData.get("city") || "").trim();
+    const province = String(formData.get("province") || "").trim();
+    const zip = String(formData.get("zip") || "").trim();
+    const country = String(formData.get("country") || "").trim();
 
     const errors = {
       fullName: fullName ? "" : "Full name is required.",
@@ -243,6 +347,12 @@ export async function action({ request }: { request: Request }) {
       phoneSa: phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "",
     };
     if (Object.values(errors).some(Boolean)) return json({ ok: false, section: "profile", errors }, { status: 400 });
+    if (!shop) {
+      return json(
+        { ok: false, section: "profile", message: "Missing shop context for Shopify sync." },
+        { status: 400 }
+      );
+    }
 
     await syncShopifyCustomerProfile({
       shop,
@@ -252,6 +362,12 @@ export async function action({ request }: { request: Request }) {
       role,
       roleOther,
       phoneSa: phoneSa || "",
+      address1,
+      address2,
+      city,
+      province,
+      zip,
+      country,
     });
 
     await prisma.portalUser.update({
