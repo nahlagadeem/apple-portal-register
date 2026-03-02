@@ -345,13 +345,15 @@ async function syncShopifyCustomerProfile({
 
 function readAddressInput(formData: FormData) {
   return {
+    firstName: String(formData.get("firstName") || "").trim(),
+    lastName: String(formData.get("lastName") || "").trim(),
     address1: String(formData.get("address1") || "").trim(),
     address2: String(formData.get("address2") || "").trim(),
     city: String(formData.get("city") || "").trim(),
-    province: String(formData.get("province") || "").trim(),
     zip: String(formData.get("zip") || "").trim(),
     country: String(formData.get("country") || "").trim(),
     phone: normalizeSaudiPhone(formData.get("phoneSa")) || undefined,
+    isDefault: String(formData.get("isDefault") || "") === "true",
   };
 }
 
@@ -364,6 +366,7 @@ function validateAddressInput(address: ReturnType<typeof readAddressInput>) {
 }
 
 async function addCustomerAddress(admin: any, customerId: string, address: ReturnType<typeof readAddressInput>) {
+  const { isDefault, ...addressInput } = address;
   const result = await shopifyGraphql(
     admin,
     `
@@ -379,10 +382,33 @@ async function addCustomerAddress(admin: any, customerId: string, address: Retur
         }
       }
     `,
-    { customerId, address }
+    { customerId, address: addressInput }
   );
   const errors = result?.data?.customerAddressCreate?.userErrors || [];
   if (errors.length) throw new Error(errors.map((x: any) => x.message).join(", "));
+
+  const createdAddressId = String(result?.data?.customerAddressCreate?.customerAddress?.id || "");
+  if (isDefault && createdAddressId) {
+    const defaultResult = await shopifyGraphql(
+      admin,
+      `
+        mutation SetCustomerDefaultAddress($customerId: ID!, $addressId: ID!) {
+          customerDefaultAddressUpdate(customerId: $customerId, addressId: $addressId) {
+            customer {
+              id
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+      `,
+      { customerId, addressId: createdAddressId }
+    );
+    const defaultErrors = defaultResult?.data?.customerDefaultAddressUpdate?.userErrors || [];
+    if (defaultErrors.length) throw new Error(defaultErrors.map((x: any) => x.message).join(", "));
+  }
 }
 
 export async function loader({ request }: { request: Request }) {
