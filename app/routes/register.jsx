@@ -203,13 +203,17 @@ export async function action({ request }) {
   try {
     await ensurePortalUserTable();
     const formData = await request.formData();
+    const intent = String(formData.get("intent") || "register");
     const fullName = String(formData.get("fullName") || "").trim();
     const email = normalizeEmail(formData.get("email"));
     const institute = String(formData.get("institute") || "").trim();
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
-    const returnTo = normalizeReturnTo(formData.get("return_to"));
+    const returnTo =
+      intent === "complete-native-profile"
+        ? normalizeReturnTo(formData.get("return_to"), "/")
+        : normalizeReturnTo(formData.get("return_to"));
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
 
@@ -228,7 +232,7 @@ export async function action({ request }) {
     }
 
     const existing = await prisma.portalUser.findUnique({ where: { email } });
-    if (existing) {
+    if (intent !== "complete-native-profile" && existing) {
       errors.email = "Email is already registered.";
       if (jsonMode) return json({ ok: false, errors }, { status: 409 });
       return { ok: false, errors, pathPrefix };
@@ -254,23 +258,41 @@ export async function action({ request }) {
       roleOther,
     });
 
-    const user = await prisma.portalUser.create({
-      data: {
-        fullName,
-        email,
-        institute,
-        role,
-        roleOther: role === "other" ? roleOther : null,
-        phoneSa: phoneSa || null,
-        passwordHash: hashPassword(password),
-      },
-    });
+    const user =
+      existing && intent === "complete-native-profile"
+        ? await prisma.portalUser.update({
+            where: { id: existing.id },
+            data: {
+              fullName,
+              institute,
+              role,
+              roleOther: role === "other" ? roleOther : null,
+              phoneSa: phoneSa || null,
+              passwordHash: hashPassword(password),
+            },
+          })
+        : await prisma.portalUser.create({
+            data: {
+              fullName,
+              email,
+              institute,
+              role,
+              roleOther: role === "other" ? roleOther : null,
+              phoneSa: phoneSa || null,
+              passwordHash: hashPassword(password),
+            },
+          });
 
     if (jsonMode) {
       return json({
         ok: true,
-        redirectUrl: `https://${shop}/account/login`,
+        redirectUrl:
+          intent === "complete-native-profile" ? `https://${shop}/` : `https://${shop}/account/login`,
       });
+    }
+
+    if (intent === "complete-native-profile") {
+      return redirect(returnTo || "/");
     }
 
     return createUserSession(user.id, returnTo);
