@@ -133,4 +133,37 @@ export async function ensurePortalUserTable() {
   await prisma.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "PortalUser_email_key" ON "PortalUser"("email");
   `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ProfilePromptState" (
+      "id" SERIAL NOT NULL,
+      "shop" TEXT NOT NULL,
+      "customerEmail" TEXT NOT NULL,
+      "customerId" TEXT,
+      "skippedAt" TIMESTAMP(3),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ProfilePromptState_pkey" PRIMARY KEY ("id")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfilePromptState" ADD COLUMN IF NOT EXISTS "shop" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfilePromptState" ADD COLUMN IF NOT EXISTS "customerEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfilePromptState" ADD COLUMN IF NOT EXISTS "customerId" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfilePromptState" ADD COLUMN IF NOT EXISTS "skippedAt" TIMESTAMP(3)`);
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ProfilePromptState" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ProfilePromptState" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE "ProfilePromptState" SET "updatedAt" = CURRENT_TIMESTAMP WHERE "updatedAt" IS NULL`
+  );
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "ProfilePromptState_shop_customerEmail_key"
+    ON "ProfilePromptState"("shop", "customerEmail");
+  `);
 }

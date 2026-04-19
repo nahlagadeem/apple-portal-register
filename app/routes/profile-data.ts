@@ -424,6 +424,34 @@ async function resolvePortalUserFromSessionOrShopify(
   }
 }
 
+async function getProfilePromptState(
+  shop: string,
+  customerEmail: string,
+  loggedInCustomerId: string
+) {
+  if (!shop || !customerEmail) return null;
+
+  const state = await prisma.profilePromptState.findUnique({
+    where: {
+      shop_customerEmail: {
+        shop,
+        customerEmail,
+      },
+    },
+  });
+
+  if (!state) return null;
+
+  if (!state.customerId && loggedInCustomerId) {
+    return prisma.profilePromptState.update({
+      where: { id: state.id },
+      data: { customerId: loggedInCustomerId },
+    });
+  }
+
+  return state;
+}
+
 async function syncShopifyCustomerProfile({
   shop,
   customerId,
@@ -544,12 +572,39 @@ async function addCustomerAddress(admin: any, customerId: string, address: Retur
 
 export async function loader({ request }: { request: Request }) {
   await ensurePortalUserTable();
+  const context = await resolveShopAndCustomerContext(request);
   const resolved = await resolvePortalUserFromSessionOrShopify(request);
-  if (!resolved) return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  if (!resolved) {
+    if (!context.shop || !context.customerEmail) {
+      return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const promptState = await getProfilePromptState(
+      context.shop,
+      context.customerEmail,
+      context.loggedInCustomerId
+    );
+
+    return json({
+      ok: true,
+      user: null,
+      hasPortalProfile: false,
+      skippedProfilePrompt: Boolean(promptState?.skippedAt),
+      shouldPromptProfileCompletion: !promptState?.skippedAt,
+    });
+  }
 
   const { user, defaultAddress, addresses } = resolved;
+  const promptState = await getProfilePromptState(
+    resolved.shop,
+    user.email,
+    normalizeCustomerId(resolved.customerId)
+  );
   return json({
     ok: true,
+    hasPortalProfile: true,
+    skippedProfilePrompt: Boolean(promptState?.skippedAt),
+    shouldPromptProfileCompletion: false,
     user: {
       id: user.id,
       fullName: user.fullName,

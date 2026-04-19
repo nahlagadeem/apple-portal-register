@@ -53,12 +53,48 @@ function normalizeShopDomain(input) {
   }
 }
 
+function normalizeCustomerId(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return "";
+  const gidMatch = raw.match(/\/(\d+)$/);
+  if (gidMatch?.[1]) return gidMatch[1];
+  return raw.replace(/\D/g, "") || raw;
+}
+
 function wantsJson(request) {
   const url = new URL(request.url);
   const accept = String(request.headers.get("accept") || "").toLowerCase();
   const requestedWith = String(request.headers.get("x-requested-with") || "").toLowerCase();
   const forceJson = url.searchParams.get("response") === "json" || url.searchParams.get("ajax") === "1";
   return forceJson || accept.includes("application/json") || requestedWith === "xmlhttprequest";
+}
+
+function getStorefrontContext(request, formData) {
+  const requestUrl = new URL(request.url);
+  return {
+    shop: normalizeShopDomain(
+      requestUrl.searchParams.get("shop") ||
+        formData.get("shop") ||
+        request.headers.get("x-shopify-shop-domain") ||
+        request.headers.get("x-shop-domain") ||
+        env.LIVE_SHOP_DOMAIN
+    ),
+    customerEmail: normalizeEmail(
+      formData.get("email") ||
+        requestUrl.searchParams.get("customer_email") ||
+        request.headers.get("x-shopify-customer-email") ||
+        request.headers.get("x-customer-email")
+    ),
+    loggedInCustomerId: normalizeCustomerId(
+      requestUrl.searchParams.get("logged_in_customer_id") ||
+        requestUrl.searchParams.get("customer_id") ||
+        formData.get("logged_in_customer_id") ||
+        formData.get("customer_id") ||
+        request.headers.get("x-shopify-logged-in-customer-id") ||
+        request.headers.get("x-shopify-customer-id") ||
+        request.headers.get("x-customer-id")
+    ),
+  };
 }
 
 function splitName(fullName) {
@@ -217,6 +253,51 @@ export async function action({ request }) {
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
 
+    const { shop, customerEmail, loggedInCustomerId } = getStorefrontContext(request, formData);
+    if (!shop) {
+      errors.general = "Missing shop context. Open this form from your storefront.";
+      if (jsonMode) return json({ ok: false, errors }, { status: 400 });
+      return { ok: false, errors, pathPrefix };
+    }
+
+    if (intent === "skip-native-profile") {
+      const skipEmail = customerEmail || email;
+      errors.email = isValidEmail(skipEmail) ? "" : "Valid email is required.";
+      if (errors.email) {
+        if (jsonMode) return json({ ok: false, errors }, { status: 400 });
+        return { ok: false, errors, pathPrefix };
+      }
+
+      await prisma.profilePromptState.upsert({
+        where: {
+          shop_customerEmail: {
+            shop,
+            customerEmail: skipEmail,
+          },
+        },
+        update: {
+          customerId: loggedInCustomerId || null,
+          skippedAt: new Date(),
+        },
+        create: {
+          shop,
+          customerEmail: skipEmail,
+          customerId: loggedInCustomerId || null,
+          skippedAt: new Date(),
+        },
+      });
+
+      if (jsonMode) {
+        return json({
+          ok: true,
+          skipped: true,
+          redirectUrl: `https://${shop}${returnTo || "/"}`,
+        });
+      }
+
+      return redirect(returnTo || "/");
+    }
+
     errors.fullName = fullName ? "" : "Full name is required.";
     errors.email = isValidEmail(email) ? "" : "Valid email is required.";
     errors.institute = institute ? "" : "Institute name is required.";
@@ -235,16 +316,6 @@ export async function action({ request }) {
     if (intent !== "complete-native-profile" && existing) {
       errors.email = "Email is already registered.";
       if (jsonMode) return json({ ok: false, errors }, { status: 409 });
-      return { ok: false, errors, pathPrefix };
-    }
-
-    const requestUrl = new URL(request.url);
-    const shop = normalizeShopDomain(
-      requestUrl.searchParams.get("shop") || env.LIVE_SHOP_DOMAIN
-    );
-    if (!shop) {
-      errors.general = "Missing shop context. Open this form from your storefront.";
-      if (jsonMode) return json({ ok: false, errors }, { status: 400 });
       return { ok: false, errors, pathPrefix };
     }
 
@@ -282,6 +353,13 @@ export async function action({ request }) {
               passwordHash: hashPassword(password),
             },
           });
+
+    await prisma.profilePromptState.deleteMany({
+      where: {
+        shop,
+        customerEmail: email,
+      },
+    });
 
     if (jsonMode) {
       return json({
