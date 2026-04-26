@@ -376,7 +376,7 @@ export async function action({ request }) {
             where: { id: existing.id },
             data: {
               fullName,
-              institute,
+              institute: institute.label,
               role,
               roleOther: role === "other" ? roleOther : null,
               phoneSa: phoneSa || null,
@@ -387,7 +387,7 @@ export async function action({ request }) {
             data: {
               fullName,
               email,
-              institute,
+              institute: institute.label,
               role,
               roleOther: role === "other" ? roleOther : null,
               phoneSa: phoneSa || null,
