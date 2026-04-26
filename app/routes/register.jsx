@@ -269,7 +269,9 @@ export async function action({ request }) {
     const normalizedLocalPart = normalizeEmailLocalPart(
       formData.get("emailLocalPart") || getEmailLocalPart(rawEmail)
     );
-    const email = normalizeEmail(buildInstituteEmail(instituteKey, normalizedLocalPart));
+    const schoolEmail = normalizeEmail(buildInstituteEmail(instituteKey, normalizedLocalPart));
+    const portalEmail =
+      intent === "complete-native-profile" ? rawEmail : schoolEmail;
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
@@ -280,7 +282,8 @@ export async function action({ request }) {
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
     values.fullName = fullName;
-    values.emailLocalPart = normalizedLocalPart === null ? String(formData.get("emailLocalPart") || "").trim() : normalizedLocalPart;
+    values.emailLocalPart =
+      normalizedLocalPart === null ? String(formData.get("emailLocalPart") || "").trim() : normalizedLocalPart;
     values.instituteKey = instituteKey;
     values.role = role || "student";
     values.roleOther = roleOther;
@@ -294,7 +297,7 @@ export async function action({ request }) {
     }
 
     if (intent === "skip-native-profile") {
-      const skipEmail = customerEmail || email;
+      const skipEmail = customerEmail || rawEmail || portalEmail;
       errors.email = isValidEmail(skipEmail) ? "" : "Valid email is required.";
       if (errors.email) {
         if (jsonMode) return json({ ok: false, errors }, { status: 400 });
@@ -339,7 +342,7 @@ export async function action({ request }) {
         : normalizedLocalPart
           ? ""
           : "Email username is required.";
-    if (!errors.email && institute && !isValidEmail(email)) {
+    if (!errors.email && institute && !isValidEmail(schoolEmail)) {
       errors.email = `Use your ${institute.domain} school email.`;
     }
     errors.role = role ? "" : "Role is required.";
@@ -353,7 +356,13 @@ export async function action({ request }) {
       return { ok: false, errors, pathPrefix, values };
     }
 
-    const existing = await prisma.portalUser.findUnique({ where: { email } });
+    if (intent === "complete-native-profile" && !isValidEmail(portalEmail)) {
+      errors.email = "Missing customer account email.";
+      if (jsonMode) return json({ ok: false, errors }, { status: 400 });
+      return { ok: false, errors, pathPrefix, values };
+    }
+
+    const existing = await prisma.portalUser.findUnique({ where: { email: portalEmail } });
     if (intent !== "complete-native-profile" && existing) {
       errors.email = "Email is already registered.";
       if (jsonMode) return json({ ok: false, errors }, { status: 409 });
@@ -362,10 +371,10 @@ export async function action({ request }) {
 
     await ensureShopifyCustomer({
       shop,
-      email,
+      email: intent === "complete-native-profile" ? rawEmail : portalEmail,
       fullName,
       phoneSa,
-      institute,
+      institute: institute.label,
       role,
       roleOther,
     });
@@ -376,6 +385,7 @@ export async function action({ request }) {
             where: { id: existing.id },
             data: {
               fullName,
+              email: portalEmail,
               institute: institute.label,
               role,
               roleOther: role === "other" ? roleOther : null,
@@ -386,7 +396,7 @@ export async function action({ request }) {
         : await prisma.portalUser.create({
             data: {
               fullName,
-              email,
+              email: portalEmail,
               institute: institute.label,
               role,
               roleOther: role === "other" ? roleOther : null,
@@ -398,7 +408,7 @@ export async function action({ request }) {
     await prisma.profilePromptState.deleteMany({
       where: {
         shop,
-        customerEmail: email,
+        customerEmail: intent === "complete-native-profile" ? portalEmail : schoolEmail,
       },
     });
 
