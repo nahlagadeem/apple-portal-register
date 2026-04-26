@@ -1,5 +1,12 @@
+import { useState } from "react";
 import { Form, Link, useActionData, useLoaderData } from "react-router";
 import prisma from "../db.server";
+import {
+  buildInstituteOptions,
+  getInstituteByEmail,
+  getInstituteByKey,
+  getInstituteByLabel,
+} from "../institutes";
 import { unauthenticated } from "../shopify.server";
 import {
   clearUserSession,
@@ -13,6 +20,7 @@ import {
 } from "../portal-auth.server";
 
 const env = (globalThis.process && globalThis.process.env) || {};
+const INSTITUTE_OPTIONS = buildInstituteOptions();
 
 function normalizeShopDomain(input) {
   if (!input) return "";
@@ -167,18 +175,23 @@ export async function action({ request }) {
     if (!currentUser) return clearUserSession(request);
 
     const fullName = String(formData.get("fullName") || "").trim();
-    const institute = String(formData.get("institute") || "").trim();
+    const instituteKey = String(formData.get("institute") || "").trim();
+    const institute = getInstituteByKey(instituteKey);
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
+    const matchingInstitute = getInstituteByEmail(currentUser.email);
 
     const errors = {
       fullName: fullName ? "" : "Full name is required.",
-      institute: institute ? "" : "Institute is required.",
+      institute: institute ? "" : "Please choose an institute.",
       role: role ? "" : "Role is required.",
       roleOther: role === "other" && !roleOther ? "Please specify role." : "",
       phoneSa: phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "",
     };
+    if (!errors.institute && matchingInstitute && matchingInstitute.key !== institute.key) {
+      errors.institute = `This account must use ${matchingInstitute.domain}.`;
+    }
 
     if (Object.values(errors).some(Boolean)) return { ok: false, section: "profile", errors };
 
@@ -192,7 +205,7 @@ export async function action({ request }) {
         shop,
         email: currentUser.email,
         fullName,
-        institute,
+        institute: institute.label,
         role,
         roleOther,
         phoneSa,
@@ -210,7 +223,7 @@ export async function action({ request }) {
       where: { id: userId },
       data: {
         fullName,
-        institute,
+        institute: institute.label,
         role,
         roleOther: role === "other" ? roleOther : null,
         phoneSa: phoneSa || null,
@@ -252,6 +265,11 @@ export default function ProfilePage() {
   const actionData = useActionData();
   const errors = actionData?.errors || {};
   const linkBase = actionData?.pathPrefix ?? pathPrefix ?? "";
+  const initialInstitute =
+    getInstituteByEmail(user.email) ||
+    getInstituteByLabel(user.institute);
+  const [selectedInstituteKey, setSelectedInstituteKey] = useState(initialInstitute?.key || "");
+  const selectedInstitute = getInstituteByKey(selectedInstituteKey);
 
   return (
     <main style={{ maxWidth: 640, margin: "40px auto", padding: 16 }}>
@@ -279,9 +297,29 @@ export default function ProfilePage() {
           <label>
             Institute
             <br />
-            <input name="institute" type="text" defaultValue={user.institute} />
+            <select
+              name="institute"
+              value={selectedInstituteKey}
+              onChange={(event) => setSelectedInstituteKey(event.target.value)}
+            >
+              <option value="">Choose your institute</option>
+              {Object.entries(INSTITUTE_OPTIONS).map(([segment, institutes]) => (
+                <optgroup key={segment} label={segment}>
+                  {institutes.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
           </label>
           {errors.institute ? <small style={{ color: "red" }}>{errors.institute}</small> : null}
+          {selectedInstitute ? (
+            <small style={{ display: "block", marginTop: 6 }}>
+              School email domain: {selectedInstitute.domain}
+            </small>
+          ) : null}
         </p>
         <p>
           <label>

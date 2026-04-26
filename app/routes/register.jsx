@@ -1,5 +1,12 @@
+import { useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData } from "react-router";
 import prisma from "../db.server";
+import {
+  buildInstituteEmail,
+  buildInstituteOptions,
+  getInstituteByKey,
+  normalizeEmailLocalPart,
+} from "../institutes";
 import { unauthenticated } from "../shopify.server";
 import {
   createUserSession,
@@ -17,6 +24,7 @@ const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
   "Cache-Control": "no-store",
 };
+const INSTITUTE_OPTIONS = buildInstituteOptions();
 
 function json(data, init = {}) {
   return new Response(JSON.stringify(data), {
@@ -27,6 +35,12 @@ function json(data, init = {}) {
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function getEmailLocalPart(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!email.includes("@")) return email;
+  return email.split("@")[0];
 }
 
 function normalizeReturnTo(value, fallback = "/pages/student-profile") {
@@ -235,14 +249,27 @@ export async function action({ request }) {
     confirmPassword: "",
     general: "",
   };
+  const values = {
+    fullName: "",
+    emailLocalPart: "",
+    instituteKey: "",
+    role: "student",
+    roleOther: "",
+    phoneSa: "",
+  };
 
   try {
     await ensurePortalUserTable();
     const formData = await request.formData();
     const intent = String(formData.get("intent") || "register");
     const fullName = String(formData.get("fullName") || "").trim();
-    const email = normalizeEmail(formData.get("email"));
-    const institute = String(formData.get("institute") || "").trim();
+    const instituteKey = String(formData.get("institute") || "").trim();
+    const institute = getInstituteByKey(instituteKey);
+    const rawEmail = normalizeEmail(formData.get("email"));
+    const normalizedLocalPart = normalizeEmailLocalPart(
+      formData.get("emailLocalPart") || getEmailLocalPart(rawEmail)
+    );
+    const email = normalizeEmail(buildInstituteEmail(instituteKey, normalizedLocalPart));
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
@@ -252,6 +279,12 @@ export async function action({ request }) {
         : normalizeReturnTo(formData.get("return_to"));
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
+    values.fullName = fullName;
+    values.emailLocalPart = normalizedLocalPart === null ? String(formData.get("emailLocalPart") || "").trim() : normalizedLocalPart;
+    values.instituteKey = instituteKey;
+    values.role = role || "student";
+    values.roleOther = roleOther;
+    values.phoneSa = String(formData.get("phoneSa") || "").trim();
 
     const { shop, customerEmail, loggedInCustomerId } = getStorefrontContext(request, formData);
     if (!shop) {
@@ -299,8 +332,16 @@ export async function action({ request }) {
     }
 
     errors.fullName = fullName ? "" : "Full name is required.";
-    errors.email = isValidEmail(email) ? "" : "Valid email is required.";
-    errors.institute = institute ? "" : "Institute name is required.";
+    errors.institute = institute ? "" : "Please choose an institute.";
+    errors.email =
+      normalizedLocalPart === null
+        ? "Use only the part before @ in your school email."
+        : normalizedLocalPart
+          ? ""
+          : "Email username is required.";
+    if (!errors.email && institute && !isValidEmail(email)) {
+      errors.email = `Use your ${institute.domain} school email.`;
+    }
     errors.role = role ? "" : "Role is required.";
     errors.roleOther = role === "other" && !roleOther ? "Please specify role." : "";
     errors.phoneSa = phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "";
@@ -309,14 +350,14 @@ export async function action({ request }) {
 
     if (Object.values(errors).some(Boolean)) {
       if (jsonMode) return json({ ok: false, errors }, { status: 400 });
-      return { ok: false, errors, pathPrefix };
+      return { ok: false, errors, pathPrefix, values };
     }
 
     const existing = await prisma.portalUser.findUnique({ where: { email } });
     if (intent !== "complete-native-profile" && existing) {
       errors.email = "Email is already registered.";
       if (jsonMode) return json({ ok: false, errors }, { status: 409 });
-      return { ok: false, errors, pathPrefix };
+      return { ok: false, errors, pathPrefix, values };
     }
 
     await ensureShopifyCustomer({
@@ -377,7 +418,7 @@ export async function action({ request }) {
   } catch (e) {
     errors.general = `Registration failed. ${String(e?.message || e)}`;
     if (jsonMode) return json({ ok: false, errors }, { status: 500 });
-    return { ok: false, errors, pathPrefix };
+    return { ok: false, errors, pathPrefix, values };
   }
 }
 
@@ -386,6 +427,16 @@ export default function RegisterPage() {
   const data = useActionData();
   const errors = data?.errors || {};
   const linkBase = data?.pathPrefix ?? pathPrefix ?? "";
+  const values = data?.values || {
+    fullName: "",
+    emailLocalPart: "",
+    instituteKey: "",
+    role: "student",
+    roleOther: "",
+    phoneSa: "",
+  };
+  const [selectedInstituteKey, setSelectedInstituteKey] = useState(values.instituteKey || "");
+  const selectedInstitute = getInstituteByKey(selectedInstituteKey);
 
   return (
     <main style={{ maxWidth: 560, margin: "40px auto", padding: 16 }}>
@@ -395,31 +446,65 @@ export default function RegisterPage() {
           <label>
             Full name
             <br />
-            <input name="fullName" type="text" />
+            <input name="fullName" type="text" defaultValue={values.fullName} />
           </label>
           {errors.fullName ? <small style={{ color: "red" }}>{errors.fullName}</small> : null}
         </p>
         <p>
           <label>
-            Email
-            <br />
-            <input name="email" type="email" />
-          </label>
-          {errors.email ? <small style={{ color: "red" }}>{errors.email}</small> : null}
-        </p>
-        <p>
-          <label>
             Institute
             <br />
-            <input name="institute" type="text" />
+            <select
+              name="institute"
+              value={selectedInstituteKey}
+              onChange={(event) => setSelectedInstituteKey(event.target.value)}
+            >
+              <option value="">Choose your institute</option>
+              {Object.entries(INSTITUTE_OPTIONS).map(([segment, institutes]) => (
+                <optgroup key={segment} label={segment}>
+                  {institutes.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
           </label>
           {errors.institute ? <small style={{ color: "red" }}>{errors.institute}</small> : null}
         </p>
         <p>
           <label>
+            School email
+            <br />
+            <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                name="emailLocalPart"
+                type="text"
+                placeholder="Enter the part before @"
+                defaultValue={values.emailLocalPart}
+                style={{ flex: "1 1 220px" }}
+              />
+              <span
+                style={{
+                  minWidth: 140,
+                  padding: "8px 10px",
+                  background: "#f4f4f4",
+                  border: "1px solid #ccc",
+                  borderRadius: 4,
+                }}
+              >
+                {selectedInstitute?.domain || "@school-domain"}
+              </span>
+            </span>
+          </label>
+          {errors.email ? <small style={{ color: "red" }}>{errors.email}</small> : null}
+        </p>
+        <p>
+          <label>
             Role
             <br />
-            <select name="role" defaultValue="student">
+            <select name="role" defaultValue={values.role || "student"}>
               <option value="student">Student</option>
               <option value="teacher">Teacher</option>
               <option value="parent">Parent</option>
@@ -432,7 +517,7 @@ export default function RegisterPage() {
           <label>
             Role (if Other)
             <br />
-            <input name="roleOther" type="text" />
+            <input name="roleOther" type="text" defaultValue={values.roleOther} />
           </label>
           {errors.roleOther ? <small style={{ color: "red" }}>{errors.roleOther}</small> : null}
         </p>
@@ -440,7 +525,12 @@ export default function RegisterPage() {
           <label>
             Saudi phone (optional)
             <br />
-            <input name="phoneSa" type="text" placeholder="05XXXXXXXX or +9665XXXXXXXX" />
+            <input
+              name="phoneSa"
+              type="text"
+              placeholder="05XXXXXXXX or +9665XXXXXXXX"
+              defaultValue={values.phoneSa}
+            />
           </label>
           {errors.phoneSa ? <small style={{ color: "red" }}>{errors.phoneSa}</small> : null}
         </p>

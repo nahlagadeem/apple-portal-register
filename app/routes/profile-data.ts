@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { getInstituteByEmail, getInstituteByKey } from "../institutes";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { clearUserSession, ensurePortalUserTable, getUserId, hashPassword, normalizeRole, normalizeSaudiPhone, verifyPassword } from "../portal-auth.server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -642,19 +643,27 @@ export async function action({ request }: { request: Request }) {
 
   if (intent === "update-profile") {
     const fullName = String(formData.get("fullName") || "").trim();
-    const institute = String(formData.get("institute") || "").trim();
+    const instituteKey = String(formData.get("institute") || "").trim();
+    const institute = getInstituteByKey(instituteKey);
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
+    const matchingInstitute = getInstituteByEmail(user.email);
 
     const errors = {
       fullName: fullName ? "" : "Full name is required.",
-      institute: institute ? "" : "Institute is required.",
+      institute: institute ? "" : "Please choose an institute.",
       role: role ? "" : "Role is required.",
       roleOther: role === "other" && !roleOther ? "Please specify role." : "",
       phoneSa: phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "",
     };
+    if (!errors.institute && matchingInstitute && matchingInstitute.key !== institute?.key) {
+      errors.institute = `This account must use ${matchingInstitute.domain}.`;
+    }
     if (Object.values(errors).some(Boolean)) return json({ ok: false, section: "profile", errors }, { status: 400 });
+    if (!institute) {
+      return json({ ok: false, section: "profile", errors }, { status: 400 });
+    }
     if (!shop) {
       return json(
         { ok: false, section: "profile", message: "Missing shop context for Shopify sync." },
@@ -666,7 +675,7 @@ export async function action({ request }: { request: Request }) {
       shop,
       customerId,
       fullName,
-      institute,
+      institute: institute.label,
       role,
       roleOther,
       phoneSa: phoneSa || "",
@@ -676,7 +685,7 @@ export async function action({ request }: { request: Request }) {
       where: { id: user.id },
       data: {
         fullName,
-        institute,
+        institute: institute.label,
         role,
         roleOther: role === "other" ? roleOther : null,
         phoneSa: phoneSa || null,
