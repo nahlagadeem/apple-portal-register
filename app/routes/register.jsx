@@ -386,6 +386,7 @@ export async function action({ request }) {
             data: {
               fullName,
               email: portalEmail,
+              schoolEmail: schoolEmail || null,
               institute: institute.label,
               role,
               roleOther: role === "other" ? roleOther : null,
@@ -397,6 +398,7 @@ export async function action({ request }) {
             data: {
               fullName,
               email: portalEmail,
+              schoolEmail: schoolEmail || null,
               institute: institute.label,
               role,
               roleOther: role === "other" ? roleOther : null,

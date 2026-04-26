@@ -103,6 +103,7 @@ export async function ensurePortalUserTable() {
       "id" SERIAL NOT NULL,
       "fullName" TEXT NOT NULL,
       "email" TEXT NOT NULL,
+      "schoolEmail" TEXT,
       "institute" TEXT NOT NULL,
       "role" TEXT NOT NULL,
       "roleOther" TEXT,
@@ -116,6 +117,7 @@ export async function ensurePortalUserTable() {
 
   await prisma.$executeRawUnsafe(`ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "fullName" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "email" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "schoolEmail" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "institute" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "role" TEXT`);
   await prisma.$executeRawUnsafe(`ALTER TABLE "PortalUser" ADD COLUMN IF NOT EXISTS "roleOther" TEXT`);

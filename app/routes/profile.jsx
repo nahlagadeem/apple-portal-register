@@ -143,6 +143,7 @@ export async function loader({ request }) {
       id: true,
       fullName: true,
       email: true,
+      schoolEmail: true,
       institute: true,
       role: true,
       roleOther: true,
@@ -291,6 +292,13 @@ export default function ProfilePage() {
             Email (read-only)
             <br />
             <input name="email" type="email" defaultValue={user.email} disabled />
+          </label>
+        </p>
+        <p>
+          <label>
+            School email (read-only)
+            <br />
+            <input name="schoolEmail" type="email" defaultValue={user.schoolEmail || ""} disabled />
           </label>
         </p>
         <p>

@@ -11,6 +11,7 @@ type PortalUserRecord = {
   id: number;
   fullName: string;
   email: string;
+  schoolEmail: string | null;
   institute: string;
   role: string;
   roleOther: string | null;
@@ -610,6 +611,7 @@ export async function loader({ request }: { request: Request }) {
       id: user.id,
       fullName: user.fullName,
       email: user.email,
+      schoolEmail: user.schoolEmail,
       institute: user.institute,
       role: user.role,
       roleOther: user.roleOther,
