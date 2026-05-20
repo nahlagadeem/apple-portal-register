@@ -169,3 +169,74 @@ export async function ensurePortalUserTable() {
     ON "ProfilePromptState"("shop", "customerEmail");
   `);
 }
+
+export async function ensureProfileOtpDraftTable() {
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "ProfileOtpDraft" (
+      "id" SERIAL NOT NULL,
+      "draftToken" TEXT NOT NULL,
+      "shop" TEXT NOT NULL,
+      "customerEmail" TEXT NOT NULL,
+      "nativeEmail" TEXT,
+      "customerId" TEXT,
+      "fullName" TEXT NOT NULL,
+      "schoolEmail" TEXT NOT NULL,
+      "institute" TEXT NOT NULL,
+      "role" TEXT NOT NULL,
+      "roleOther" TEXT,
+      "phoneSa" TEXT,
+      "passwordHash" TEXT,
+      "returnTo" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'pending_otp',
+      "verifiedAt" TIMESTAMP(3),
+      "expiresAt" TIMESTAMP(3),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "ProfileOtpDraft_pkey" PRIMARY KEY ("id")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "draftToken" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "shop" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "customerEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "nativeEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "customerId" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "fullName" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "schoolEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "institute" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "role" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "roleOther" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "phoneSa" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "passwordHash" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "returnTo" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT 'pending_otp'`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMP(3)`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`);
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "ProfileOtpDraft" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+
+  await prisma.$executeRawUnsafe(`UPDATE "ProfileOtpDraft" SET "updatedAt" = CURRENT_TIMESTAMP WHERE "updatedAt" IS NULL`);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "ProfileOtpDraft_draftToken_key"
+    ON "ProfileOtpDraft"("draftToken");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "ProfileOtpDraft_shop_customerEmail_key"
+    ON "ProfileOtpDraft"("shop", "customerEmail");
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "ProfileOtpDraft_shop_status_idx"
+    ON "ProfileOtpDraft"("shop", "status");
+  `);
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE "ProfileOtpDraft" SET "status" = 'pending_otp' WHERE "status" IS NULL OR "status" = ''`
+  );
+}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData } from "react-router";
+import crypto from "node:crypto";
 import prisma from "../db.server";
 import {
   buildInstituteEmail,
@@ -11,6 +12,7 @@ import { unauthenticated } from "../shopify.server";
 import {
   createUserSession,
   ensurePortalUserTable,
+  ensureProfileOtpDraftTable,
   getUserId,
   hashPassword,
   normalizeEmail,
@@ -50,6 +52,14 @@ function normalizeReturnTo(value, fallback = "/pages/student-profile") {
   if (raw.startsWith("//")) return fallback;
   if (raw.includes("://")) return fallback;
   return raw;
+}
+
+function buildNativeOtpUrl(shop, loginHint, returnTo) {
+  const relativeReturnTo = normalizeReturnTo(returnTo, "/");
+  const loginPath = `/customer_authentication/login?return_to=${encodeURIComponent(
+    relativeReturnTo
+  )}&login_hint=${encodeURIComponent(loginHint)}`;
+  return `https://${shop}${loginPath}`;
 }
 
 function normalizeShopDomain(input) {
@@ -260,6 +270,7 @@ export async function action({ request }) {
 
   try {
     await ensurePortalUserTable();
+    await ensureProfileOtpDraftTable();
     const formData = await request.formData();
     const intent = String(formData.get("intent") || "register");
     const fullName = String(formData.get("fullName") || "").trim();
@@ -270,8 +281,7 @@ export async function action({ request }) {
       formData.get("emailLocalPart") || getEmailLocalPart(rawEmail)
     );
     const schoolEmail = normalizeEmail(buildInstituteEmail(instituteKey, normalizedLocalPart));
-    const portalEmail =
-      intent === "complete-native-profile" ? rawEmail : schoolEmail;
+    const finalEmail = schoolEmail || rawEmail;
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
@@ -289,7 +299,11 @@ export async function action({ request }) {
     values.roleOther = roleOther;
     values.phoneSa = String(formData.get("phoneSa") || "").trim();
 
-    const { shop, customerEmail, loggedInCustomerId } = getStorefrontContext(request, formData);
+    const {
+      shop,
+      customerEmail: storefrontCustomerEmail,
+      loggedInCustomerId,
+    } = getStorefrontContext(request, formData);
     if (!shop) {
       errors.general = "Missing shop context. Open this form from your storefront.";
       if (jsonMode) return json({ ok: false, errors }, { status: 400 });
@@ -297,7 +311,7 @@ export async function action({ request }) {
     }
 
     if (intent === "skip-native-profile") {
-      const skipEmail = customerEmail || rawEmail || portalEmail;
+      const skipEmail = storefrontCustomerEmail || rawEmail || finalEmail;
       errors.email = isValidEmail(skipEmail) ? "" : "Valid email is required.";
       if (errors.email) {
         if (jsonMode) return json({ ok: false, errors }, { status: 400 });
@@ -348,30 +362,81 @@ export async function action({ request }) {
     errors.role = role ? "" : "Role is required.";
     errors.roleOther = role === "other" && !roleOther ? "Please specify role." : "";
     errors.phoneSa = phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "";
-    errors.password = password.length >= 6 ? "" : "Password must be at least 6 characters.";
-    errors.confirmPassword = password === confirmPassword ? "" : "Passwords do not match.";
+    errors.password =
+      intent === "complete-native-profile" || password.length >= 6
+        ? ""
+        : "Password must be at least 6 characters.";
+    errors.confirmPassword =
+      intent === "complete-native-profile" || password === confirmPassword
+        ? ""
+        : "Passwords do not match.";
 
     if (Object.values(errors).some(Boolean)) {
       if (jsonMode) return json({ ok: false, errors }, { status: 400 });
       return { ok: false, errors, pathPrefix, values };
     }
 
-    if (intent === "complete-native-profile" && !isValidEmail(portalEmail)) {
-      errors.email = "Missing customer account email.";
-      if (jsonMode) return json({ ok: false, errors }, { status: 400 });
-      return { ok: false, errors, pathPrefix, values };
-    }
-
-    const existing = await prisma.portalUser.findUnique({ where: { email: portalEmail } });
+    const existing = await prisma.portalUser.findUnique({ where: { email: finalEmail } });
     if (intent !== "complete-native-profile" && existing) {
       errors.email = "Email is already registered.";
       if (jsonMode) return json({ ok: false, errors }, { status: 409 });
       return { ok: false, errors, pathPrefix, values };
     }
 
+    if (intent === "complete-native-profile") {
+      const draftToken = crypto.randomUUID();
+      const callbackReturnTo = withPathPrefix(request, `/profile-otp?draft_token=${draftToken}`);
+
+      await prisma.profileOtpDraft.upsert({
+        where: {
+          shop_customerEmail: {
+            shop,
+            customerEmail: finalEmail,
+          },
+        },
+        update: {
+          draftToken,
+          nativeEmail: storefrontCustomerEmail || rawEmail || null,
+          customerId: loggedInCustomerId || null,
+          fullName,
+          schoolEmail: finalEmail,
+          institute: institute.label,
+          role,
+          roleOther: role === "other" ? roleOther : null,
+          phoneSa: phoneSa || null,
+          passwordHash: hashPassword(password),
+          returnTo,
+          status: "pending_otp",
+          verifiedAt: null,
+          expiresAt: new Date(Date.now() + 1000 * 60 * 30),
+        },
+        create: {
+          draftToken,
+          shop,
+          customerEmail: finalEmail,
+          nativeEmail: storefrontCustomerEmail || rawEmail || null,
+          customerId: loggedInCustomerId || null,
+          fullName,
+          schoolEmail: finalEmail,
+          institute: institute.label,
+          role,
+          roleOther: role === "other" ? roleOther : null,
+          phoneSa: phoneSa || null,
+          passwordHash: hashPassword(password),
+          returnTo,
+          status: "pending_otp",
+          expiresAt: new Date(Date.now() + 1000 * 60 * 30),
+        },
+      });
+
+      const redirectUrl = buildNativeOtpUrl(shop, finalEmail, callbackReturnTo);
+      if (jsonMode) return json({ ok: true, redirectUrl });
+      return redirect(redirectUrl);
+    }
+
     await ensureShopifyCustomer({
       shop,
-      email: intent === "complete-native-profile" ? rawEmail : portalEmail,
+      email: finalEmail,
       fullName,
       phoneSa,
       institute: institute.label,
@@ -380,12 +445,12 @@ export async function action({ request }) {
     });
 
     const user =
-      existing && intent === "complete-native-profile"
+      existing
         ? await prisma.portalUser.update({
             where: { id: existing.id },
             data: {
               fullName,
-              email: portalEmail,
+              email: finalEmail,
               schoolEmail: schoolEmail || null,
               institute: institute.label,
               role,
@@ -397,7 +462,7 @@ export async function action({ request }) {
         : await prisma.portalUser.create({
             data: {
               fullName,
-              email: portalEmail,
+              email: finalEmail,
               schoolEmail: schoolEmail || null,
               institute: institute.label,
               role,
@@ -410,20 +475,15 @@ export async function action({ request }) {
     await prisma.profilePromptState.deleteMany({
       where: {
         shop,
-        customerEmail: intent === "complete-native-profile" ? portalEmail : schoolEmail,
+        customerEmail: finalEmail,
       },
     });
 
     if (jsonMode) {
       return json({
         ok: true,
-        redirectUrl:
-          intent === "complete-native-profile" ? `https://${shop}/` : `https://${shop}/account/login`,
+        redirectUrl: `https://${shop}/account/login`,
       });
-    }
-
-    if (intent === "complete-native-profile") {
-      return redirect(returnTo || "/");
     }
 
     return createUserSession(user.id, returnTo);
