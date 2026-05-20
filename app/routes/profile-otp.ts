@@ -77,14 +77,6 @@ function normalizeCustomerId(input: string | null | undefined): string {
   return raw.replace(/\D/g, "") || raw;
 }
 
-function buildNativeOtpUrl(shop: string, loginHint: string, returnTo: string) {
-  const relativeReturnTo = normalizeReturnTo(returnTo, "/");
-  const loginPath = `/account/login?return_to=${encodeURIComponent(
-    relativeReturnTo
-  )}&login_hint=${encodeURIComponent(loginHint)}&ui_hint=full`;
-  return `https://${shop}${loginPath}`;
-}
-
 async function resolveShopAndCustomerContext(request: Request) {
   const url = new URL(request.url);
   const queryShop = normalizeShopDomain(url.searchParams.get("shop"));
@@ -163,8 +155,8 @@ export async function loader({ request }: { request: Request }) {
 
   const context = await resolveShopAndCustomerContext(request);
   const shop = normalizeShopDomain(context.shop || draft.shop);
-  const customerEmail = normalizeEmail(context.customerEmail);
-  const customerId = normalizeCustomerId(context.loggedInCustomerId);
+  const customerEmail = normalizeEmail(context.customerEmail || draft.customerEmail);
+  const customerId = normalizeCustomerId(context.loggedInCustomerId || draft.customerId);
 
   if (!shop || shop !== draft.shop) {
     return redirect(withPathPrefix(request, "/register?otp=invalid"));
@@ -175,26 +167,11 @@ export async function loader({ request }: { request: Request }) {
   }
 
   if (!customerEmail && !customerId) {
-    return redirect(
-      buildNativeOtpUrl(shop, draft.schoolEmail || draft.customerEmail || draft.nativeEmail || "", withPathPrefix(request, `/profile-otp?draft_token=${draftToken}`))
-    );
+    return redirect(withPathPrefix(request, `/register?otp=pending&draft_token=${draftToken}`));
   }
 
-  const emailMatches = customerEmail && customerEmail === draft.customerEmail;
-  const customerMatches = customerId && draft.customerId && customerId === draft.customerId;
-
-  if (customerEmail && !emailMatches && !customerMatches) {
+  if (customerEmail && customerEmail !== draft.customerEmail) {
     return redirect(withPathPrefix(request, `/register?otp=invalid&draft_token=${draftToken}`));
-  }
-
-  if (!emailMatches && !customerMatches) {
-    return redirect(
-      buildNativeOtpUrl(
-        shop,
-        draft.schoolEmail || draft.customerEmail || draft.nativeEmail || "",
-        withPathPrefix(request, `/profile-otp?draft_token=${draftToken}`)
-      )
-    );
   }
 
   const existing = await prisma.portalUser.findUnique({

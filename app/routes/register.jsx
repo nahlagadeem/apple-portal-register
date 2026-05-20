@@ -63,9 +63,9 @@ function normalizeReturnTo(value, fallback = "/pages/student-profile") {
 
 function buildNativeOtpUrl(shop, loginHint, returnTo) {
   const relativeReturnTo = normalizeReturnTo(returnTo, "/");
-  const loginPath = `/account/login?return_to=${encodeURIComponent(
+  const loginPath = `/customer_authentication/login?return_to=${encodeURIComponent(
     relativeReturnTo
-  )}&login_hint=${encodeURIComponent(loginHint)}&ui_hint=full`;
+  )}&login_hint=${encodeURIComponent(loginHint)}`;
   return `https://${shop}${loginPath}`;
 }
 
@@ -400,18 +400,17 @@ export async function action({ request }) {
     if (intent === "complete-native-profile") {
       const draftToken = crypto.randomUUID();
       const callbackReturnTo = withPathPrefix(request, `/profile-otp?draft_token=${draftToken}`);
-      const accountEmail = normalizeEmail(storefrontCustomerEmail || rawEmail || finalEmail);
 
       await prisma.profileOtpDraft.upsert({
         where: {
           shop_customerEmail: {
             shop,
-            customerEmail: accountEmail,
+            customerEmail: finalEmail,
           },
         },
         update: {
           draftToken,
-          nativeEmail: accountEmail || null,
+          nativeEmail: storefrontCustomerEmail || rawEmail || null,
           customerId: loggedInCustomerId || null,
           fullName,
           schoolEmail: finalEmail,
@@ -428,8 +427,8 @@ export async function action({ request }) {
         create: {
           draftToken,
           shop,
-          customerEmail: accountEmail,
-          nativeEmail: accountEmail || null,
+          customerEmail: finalEmail,
+          nativeEmail: storefrontCustomerEmail || rawEmail || null,
           customerId: loggedInCustomerId || null,
           fullName,
           schoolEmail: finalEmail,
