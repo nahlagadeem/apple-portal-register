@@ -1,7 +1,7 @@
 import prisma from "../db.server";
 import { getInstituteByEmail, getInstituteByKey } from "../institutes";
 import { authenticate, unauthenticated } from "../shopify.server";
-import { clearUserSession, ensurePortalUserTable, ensureProfileOtpDraftTable, getUserId, hashPassword, normalizeRole, normalizeSaudiPhone, verifyPassword } from "../portal-auth.server";
+import { clearUserSession, ensurePortalUserTable, getUserId, hashPassword, normalizeRole, normalizeSaudiPhone, verifyPassword } from "../portal-auth.server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
@@ -454,19 +454,6 @@ async function getProfilePromptState(
   return state;
 }
 
-async function getProfileOtpDraft(shop: string, customerEmail: string) {
-  if (!shop || !customerEmail) return null;
-
-  return prisma.profileOtpDraft.findFirst({
-    where: {
-      shop,
-      customerEmail,
-      status: { in: ["pending_otp", "expired"] },
-    },
-    orderBy: { updatedAt: "desc" },
-  });
-}
-
 async function syncShopifyCustomerProfile({
   shop,
   customerId,
@@ -587,7 +574,6 @@ async function addCustomerAddress(admin: any, customerId: string, address: Retur
 
 export async function loader({ request }: { request: Request }) {
   await ensurePortalUserTable();
-  await ensureProfileOtpDraftTable();
   const context = await resolveShopAndCustomerContext(request);
   const resolved = await resolvePortalUserFromSessionOrShopify(request);
   if (!resolved) {
@@ -600,21 +586,17 @@ export async function loader({ request }: { request: Request }) {
       context.customerEmail,
       context.loggedInCustomerId
     );
-    const draft = await getProfileOtpDraft(context.shop, context.customerEmail);
 
     return json({
       ok: true,
       user: null,
       hasPortalProfile: false,
-      pendingProfileOtpDraft: Boolean(draft),
-      pendingProfileOtpDraftStatus: draft?.status || null,
       skippedProfilePrompt: Boolean(promptState?.skippedAt),
       shouldPromptProfileCompletion: !promptState?.skippedAt,
     });
   }
 
   const { user, defaultAddress, addresses } = resolved;
-  const draft = await getProfileOtpDraft(resolved.shop, user.email);
   const promptState = await getProfilePromptState(
     resolved.shop,
     user.email,
@@ -623,8 +605,6 @@ export async function loader({ request }: { request: Request }) {
   return json({
     ok: true,
     hasPortalProfile: true,
-    pendingProfileOtpDraft: Boolean(draft),
-    pendingProfileOtpDraftStatus: draft?.status || null,
     skippedProfilePrompt: Boolean(promptState?.skippedAt),
     shouldPromptProfileCompletion: false,
     user: {

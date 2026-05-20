@@ -58,28 +58,3 @@ model ProfilePromptState {
 
   @@unique([shop, customerEmail])
 }
-
-model ProfileOtpDraft {
-  id            Int      @id @default(autoincrement())
-  draftToken    String   @unique
-  shop          String
-  customerEmail String
-  nativeEmail   String?
-  customerId    String?
-  fullName      String
-  schoolEmail   String
-  institute     String
-  role          String
-  roleOther     String?
-  phoneSa       String?
-  passwordHash  String?
-  returnTo      String?
-  status        String   @default("pending_otp")
-  verifiedAt    DateTime?
-  expiresAt     DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  @@unique([shop, customerEmail])
-  @@index([shop, status])
-}
