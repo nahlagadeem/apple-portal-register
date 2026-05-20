@@ -3,7 +3,6 @@ import { Form, Link, redirect, useActionData, useLoaderData } from "react-router
 import crypto from "node:crypto";
 import prisma from "../db.server";
 import {
-  buildInstituteEmail,
   buildInstituteOptions,
   getInstituteByKey,
   normalizeEmailLocalPart,
@@ -43,6 +42,14 @@ function getEmailLocalPart(value) {
   const email = String(value || "").trim().toLowerCase();
   if (!email.includes("@")) return email;
   return email.split("@")[0];
+}
+
+function normalizeEmailDomain(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  const normalized = raw.startsWith("@") ? raw : `@${raw.replace(/^@+/, "")}`;
+  if (!/^@[a-z0-9.-]+\.[a-z]{2,}$/.test(normalized)) return null;
+  return normalized;
 }
 
 function normalizeReturnTo(value, fallback = "/pages/student-profile") {
@@ -262,6 +269,7 @@ export async function action({ request }) {
   const values = {
     fullName: "",
     emailLocalPart: "",
+    emailDomain: "",
     instituteKey: "",
     role: "student",
     roleOther: "",
@@ -280,7 +288,12 @@ export async function action({ request }) {
     const normalizedLocalPart = normalizeEmailLocalPart(
       formData.get("emailLocalPart") || getEmailLocalPart(rawEmail)
     );
-    const schoolEmail = normalizeEmail(buildInstituteEmail(instituteKey, normalizedLocalPart));
+    const emailDomain = normalizeEmailDomain(
+      formData.get("emailDomain") || institute?.domain || ""
+    );
+    const schoolEmail = normalizeEmail(
+      normalizedLocalPart && emailDomain ? `${normalizedLocalPart}${emailDomain}` : ""
+    );
     const finalEmail = schoolEmail || rawEmail;
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
@@ -294,6 +307,7 @@ export async function action({ request }) {
     values.fullName = fullName;
     values.emailLocalPart =
       normalizedLocalPart === null ? String(formData.get("emailLocalPart") || "").trim() : normalizedLocalPart;
+    values.emailDomain = emailDomain || String(formData.get("emailDomain") || "").trim();
     values.instituteKey = instituteKey;
     values.role = role || "student";
     values.roleOther = roleOther;
@@ -356,8 +370,8 @@ export async function action({ request }) {
         : normalizedLocalPart
           ? ""
           : "Email username is required.";
-    if (!errors.email && institute && !isValidEmail(schoolEmail)) {
-      errors.email = `Use your ${institute.domain} school email.`;
+    if (!errors.email && !isValidEmail(schoolEmail)) {
+      errors.email = "Use a valid school email domain.";
     }
     errors.role = role ? "" : "Role is required.";
     errors.roleOther = role === "other" && !roleOther ? "Please specify role." : "";
@@ -502,6 +516,7 @@ export default function RegisterPage() {
   const values = data?.values || {
     fullName: "",
     emailLocalPart: "",
+    emailDomain: "",
     instituteKey: "",
     role: "student",
     roleOther: "",
@@ -557,17 +572,19 @@ export default function RegisterPage() {
                 defaultValue={values.emailLocalPart}
                 style={{ flex: "1 1 220px" }}
               />
-              <span
+              <input
+                name="emailDomain"
+                type="text"
+                placeholder="@school-domain"
+                defaultValue={values.emailDomain || selectedInstitute?.domain || "@school-domain"}
                 style={{
-                  minWidth: 140,
+                  minWidth: 180,
                   padding: "8px 10px",
-                  background: "#f4f4f4",
+                  background: "#fff",
                   border: "1px solid #ccc",
                   borderRadius: 4,
                 }}
-              >
-                {selectedInstitute?.domain || "@school-domain"}
-              </span>
+              />
             </span>
           </label>
           {errors.email ? <small style={{ color: "red" }}>{errors.email}</small> : null}
