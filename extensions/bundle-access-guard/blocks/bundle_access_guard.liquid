@@ -1,61 +1,48 @@
-{% liquid
-  assign bundle_collection_handle = 'all-bundles'
-  assign customer_domain = ''
-  assign customer_tag_access = false
-  assign customer_domain_access = false
-  assign bundle_collection_access = false
-
-  if customer
-    assign customer_domain = customer.email | split: '@' | last | downcase
-    if customer.tags contains 'bundle_access_all-bundles' or customer.tags contains 'institute_bisr'
-      assign customer_tag_access = true
-    endif
-    if customer_domain == 'bisr.com.sa'
-      assign customer_domain_access = true
-    endif
-  endif
-
-  if customer_tag_access or customer_domain_access
-    assign bundle_collection_access = true
-  endif
-
-  if request.page_type == 'collection' and collection.handle == bundle_collection_handle and bundle_collection_access == false
-    assign redirect_path = request.path | url_encode
-    assign redirect_url = '/account/login?return_url=' | append: redirect_path
-  endif
-%}
-
-{% if request.page_type == 'collection' and collection.handle == bundle_collection_handle and bundle_collection_access == false %}
+{% if request.page_type == 'collection' and collection.handle == 'all-bundles' %}
   <script>
-    window.location.replace({{ redirect_url | json }});
+    (function () {
+      var bundleHandle = {{ collection.handle | json }};
+      var returnPath = {{ request.path | json }};
+      var loginUrl = '/account/login?return_url=' + encodeURIComponent(returnPath);
+
+      function hideBundleLinks() {
+        document.querySelectorAll('a[href*="/collections/' + bundleHandle + '"]').forEach(function (anchor) {
+          anchor.setAttribute('aria-hidden', 'true');
+          anchor.style.display = 'none';
+        });
+      }
+
+      function enforceAccess(allowed) {
+        if (allowed) return;
+        window.location.replace(loginUrl);
+      }
+
+      fetch('/apps/student-register/bundle-access?collection=' + encodeURIComponent(bundleHandle), {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' },
+      })
+        .then(function (response) {
+          if (!response.ok) return { allowed: false };
+          return response.json();
+        })
+        .then(function (data) {
+          enforceAccess(Boolean(data && data.allowed));
+          if (!data || !data.allowed) hideBundleLinks();
+        })
+        .catch(function () {
+          enforceAccess(false);
+        });
+
+      hideBundleLinks();
+
+      var observer = new MutationObserver(hideBundleLinks);
+      observer.observe(document.documentElement, { childList: true, subtree: true });
+      setTimeout(function () {
+        observer.disconnect();
+      }, 10000);
+    })();
   </script>
-  <noscript>
-    <meta http-equiv="refresh" content="0;url={{ redirect_url }}">
-  </noscript>
 {% endif %}
-
-<script>
-  (function () {
-    var allowed = {{ bundle_collection_access | json }};
-    var bundleHandle = {{ bundle_collection_handle | json }};
-    if (allowed) return;
-
-    function hideBundleLinks() {
-      document.querySelectorAll('a[href*="/collections/' + bundleHandle + '"]').forEach(function (anchor) {
-        anchor.setAttribute('aria-hidden', 'true');
-        anchor.style.display = 'none';
-      });
-    }
-
-    hideBundleLinks();
-
-    var observer = new MutationObserver(hideBundleLinks);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-    setTimeout(function () {
-      observer.disconnect();
-    }, 10000);
-  })();
-</script>
 
 {% schema %}
 {
