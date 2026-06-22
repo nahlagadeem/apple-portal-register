@@ -93,6 +93,58 @@ async function resolveEmailFromCustomerId(shop: string, customerId: string) {
   return normalizeCustomerEmail(body?.data?.customer?.email);
 }
 
+async function ensureCustomerAccessTags(shop: string, customerEmail: string, customerId: string) {
+  if (!shop || !customerEmail || !customerId) return;
+
+  const admin = await getShopifyAdmin(shop);
+  const response = await admin.graphql(
+    `
+      query CustomerTags($id: ID!) {
+        customer(id: $id) {
+          id
+          tags
+        }
+      }
+    `,
+    { variables: { id: `gid://shopify/Customer/${customerId}` } }
+  );
+  const body = await response.json().catch(() => null);
+  const tags = new Set<string>(
+    Array.isArray(body?.data?.customer?.tags)
+      ? body.data.customer.tags.map((tag: unknown) => String(tag || "").trim()).filter(Boolean)
+      : [],
+  );
+  const access = getBundleCollectionAccessForEmail(customerEmail, "all-bundles");
+  if (!access.allowed) return;
+
+  tags.add("bundle_access_all-bundles");
+  tags.add("institute_bisr");
+
+  const updateResponse = await admin.graphql(
+    `
+      mutation UpdateCustomerTags($input: CustomerInput!) {
+        customerUpdate(input: $input) {
+          customer { id }
+          userErrors { field message }
+        }
+      }
+    `,
+    {
+      variables: {
+        input: {
+          id: `gid://shopify/Customer/${customerId}`,
+          tags: Array.from(tags),
+        },
+      },
+    }
+  );
+  const updateBody = await updateResponse.json().catch(() => null);
+  const userErrors = updateBody?.data?.customerUpdate?.userErrors ?? [];
+  if (userErrors.length) {
+    throw new Error(userErrors.map((error: { message?: string }) => String(error?.message || "")).filter(Boolean).join("; "));
+  }
+}
+
 async function handle(request: Request) {
   const url = new URL(request.url);
   const collectionHandle = String(url.searchParams.get("collection") || "all-bundles").trim() || "all-bundles";
@@ -125,6 +177,10 @@ async function handle(request: Request) {
     // Allow direct requests for local/debug flows.
   }
 
+  if (!proxyVerified) {
+    return json({ ok: false, allowed: false, error: "Invalid proxy signature." }, { status: 401 });
+  }
+
   if (!customerEmail && shop && loggedInCustomerId) {
     try {
       customerEmail = await resolveEmailFromCustomerId(shop, loggedInCustomerId);
@@ -138,6 +194,13 @@ async function handle(request: Request) {
   }
 
   const access = getBundleCollectionAccessForEmail(customerEmail, collectionHandle);
+  if (access.allowed && shop && loggedInCustomerId) {
+    try {
+      await ensureCustomerAccessTags(shop, customerEmail, loggedInCustomerId);
+    } catch {
+      // Tag sync is best effort; authorization still comes from the signed request and domain check.
+    }
+  }
   return json({
     ok: true,
     shop,

@@ -1,9 +1,22 @@
 {% if request.page_type == 'collection' and collection.handle == 'all-bundles' %}
+  {% if customer %}
   <script>
     (function () {
       var bundleHandle = {{ collection.handle | json }};
       var returnPath = {{ request.path | json }};
       var loginUrl = '/account/login?return_url=' + encodeURIComponent(returnPath);
+      var customerEmail = {{ customer.email | json }};
+      var customerId = {{ customer.id | json }};
+      var shopDomain = {{ shop.permanent_domain | json }};
+      var accessUrl =
+        '/apps/student-register/bundle-access?collection=' +
+        encodeURIComponent(bundleHandle) +
+        '&customer_email=' +
+        encodeURIComponent(customerEmail) +
+        '&logged_in_customer_id=' +
+        encodeURIComponent(customerId) +
+        '&shop=' +
+        encodeURIComponent(shopDomain);
 
       function hideBundleLinks() {
         document.querySelectorAll('a[href*="/collections/' + bundleHandle + '"]').forEach(function (anchor) {
@@ -17,20 +30,24 @@
         window.location.replace(loginUrl);
       }
 
-      fetch('/apps/student-register/bundle-access?collection=' + encodeURIComponent(bundleHandle), {
+      fetch(accessUrl, {
         credentials: 'same-origin',
         headers: { 'Accept': 'application/json' },
+        method: 'GET',
+        cache: 'no-store',
       })
         .then(function (response) {
-          if (!response.ok) return { allowed: false };
-          return response.json();
+          return response.ok ? response.json() : Promise.reject(new Error('unauthorized'));
         })
         .then(function (data) {
-          enforceAccess(Boolean(data && data.allowed));
-          if (!data || !data.allowed) hideBundleLinks();
+          if (!data || !data.allowed) {
+            window.location.replace(loginUrl);
+            return;
+          }
+          hideBundleLinks();
         })
         .catch(function () {
-          enforceAccess(false);
+          window.location.replace(loginUrl);
         });
 
       hideBundleLinks();
@@ -42,6 +59,11 @@
       }, 10000);
     })();
   </script>
+  {% else %}
+    <script>
+      window.location.replace('/account/login?return_url=' + encodeURIComponent({{ request.path | json }}));
+    </script>
+  {% endif %}
 {% endif %}
 
 {% schema %}
