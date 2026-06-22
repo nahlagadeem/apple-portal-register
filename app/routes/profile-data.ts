@@ -1,5 +1,5 @@
 import prisma from "../db.server";
-import { getInstituteByEmail, getInstituteByKey } from "../institutes";
+import { getInstituteByEmail, getInstituteByKey, getInstituteCustomerTags, getBundleCollectionAccessForEmail } from "../institutes";
 import { authenticate, unauthenticated } from "../shopify.server";
 import { clearUserSession, ensurePortalUserTable, getUserId, hashPassword, normalizeRole, normalizeSaudiPhone, verifyPassword } from "../portal-auth.server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -457,6 +457,7 @@ async function getProfilePromptState(
 async function syncShopifyCustomerProfile({
   shop,
   customerId,
+  customerEmail,
   fullName,
   institute,
   role,
@@ -465,6 +466,7 @@ async function syncShopifyCustomerProfile({
 }: {
   shop: string;
   customerId: string;
+  customerEmail: string;
   fullName: string;
   institute: string;
   role: string;
@@ -498,7 +500,7 @@ async function syncShopifyCustomerProfile({
         lastName: lastName || undefined,
         phone: phoneSa || undefined,
         note: noteLines.join("\n"),
-        tags: ["student_portal"],
+        tags: getInstituteCustomerTags(getInstituteByEmail(customerEmail)?.key || ""),
       },
     }
   );
@@ -607,6 +609,7 @@ export async function loader({ request }: { request: Request }) {
     hasPortalProfile: true,
     skippedProfilePrompt: Boolean(promptState?.skippedAt),
     shouldPromptProfileCompletion: false,
+    bundleCollectionAccess: getBundleCollectionAccessForEmail(user.email),
     user: {
       id: user.id,
       fullName: user.fullName,
@@ -676,6 +679,7 @@ export async function action({ request }: { request: Request }) {
     await syncShopifyCustomerProfile({
       shop,
       customerId,
+      customerEmail: user.email,
       fullName,
       institute: institute.label,
       role,
@@ -694,7 +698,12 @@ export async function action({ request }: { request: Request }) {
       },
     });
 
-    return json({ ok: true, section: "profile", message: "Profile updated." });
+    return json({
+      ok: true,
+      section: "profile",
+      message: "Profile updated.",
+      bundleCollectionAccess: getBundleCollectionAccessForEmail(user.email),
+    });
   }
 
   if (intent === "add-address") {

@@ -3,7 +3,13 @@ export const INSTITUTES = [
   { key: "sek", segment: "K12", label: "SEK International School", domain: "@sek.sa" },
   { key: "riyadh-schools-malqa", segment: "K12", label: "Riyadh Schools Al-Malqa Branch", domain: "@rsm.edu.sa" },
   { key: "riyadh-schools-hittin", segment: "K12", label: "Riyadh Schools Hittin Branch", domain: "@rsh.edu.sa" },
-  { key: "bisr", segment: "K12", label: "British International School Riyadh", domain: "@bisr.com.sa" },
+  {
+    key: "bisr",
+    segment: "K12",
+    label: "British International School Riyadh",
+    domain: "@bisr.com.sa",
+    allowedBundleCollections: ["all-bundles"],
+  },
   { key: "bisj", segment: "K12", label: "British International School Jeddah", domain: "@conti.sch.sa" },
   { key: "aisr", segment: "K12", label: "American International School Riyadh", domain: "@aisr.org" },
   { key: "aldenham", segment: "K12", label: "Aldenham Prep School", domain: "@aldenham.org" },
@@ -23,6 +29,7 @@ export const INSTITUTES = [
 const INSTITUTE_BY_KEY = new Map(INSTITUTES.map((institute) => [institute.key, institute]));
 const INSTITUTE_BY_LABEL = new Map(INSTITUTES.map((institute) => [institute.label.toLowerCase(), institute]));
 const INSTITUTE_BY_DOMAIN = new Map(INSTITUTES.map((institute) => [institute.domain, institute]));
+const DEFAULT_CUSTOMER_TAGS = ["student_portal"];
 
 export function getInstituteByKey(key) {
   return INSTITUTE_BY_KEY.get(String(key || "").trim()) || null;
@@ -58,4 +65,35 @@ export function buildInstituteOptions() {
     groups[institute.segment].push(institute);
     return groups;
   }, {});
+}
+
+export function getInstituteBundleCollections(instituteKey) {
+  const institute = getInstituteByKey(instituteKey);
+  return Array.isArray(institute?.allowedBundleCollections) ? institute.allowedBundleCollections : [];
+}
+
+export function getInstituteCustomerTags(instituteKey) {
+  const institute = getInstituteByKey(instituteKey);
+  const tags = new Set(DEFAULT_CUSTOMER_TAGS);
+  if (institute?.key) tags.add(`institute_${institute.key}`);
+  for (const collectionHandle of getInstituteBundleCollections(instituteKey)) {
+    tags.add(`bundle_access_${collectionHandle}`);
+  }
+  return Array.from(tags);
+}
+
+export function canAccessBundleCollectionForEmail(email, collectionHandle = "all-bundles") {
+  const institute = getInstituteByEmail(email);
+  return Boolean(institute?.allowedBundleCollections?.includes(collectionHandle));
+}
+
+export function getBundleCollectionAccessForEmail(email, collectionHandle = "all-bundles") {
+  const institute = getInstituteByEmail(email);
+  return {
+    allowed: Boolean(institute?.allowedBundleCollections?.includes(collectionHandle)),
+    instituteKey: institute?.key || "",
+    instituteLabel: institute?.label || "",
+    instituteDomain: institute?.domain || "",
+    collectionHandle,
+  };
 }

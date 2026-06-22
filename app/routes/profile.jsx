@@ -3,6 +3,7 @@ import { Form, Link, useActionData, useLoaderData } from "react-router";
 import prisma from "../db.server";
 import {
   buildInstituteOptions,
+  getInstituteCustomerTags,
   getInstituteByEmail,
   getInstituteByKey,
   getInstituteByLabel,
@@ -125,7 +126,7 @@ async function syncShopifyCustomerProfile({ shop, email, fullName, institute, ro
         lastName: lastName || undefined,
         phone: phoneSa || undefined,
         note: noteLines.join("\n"),
-        tags: ["student_portal"],
+        tags: getInstituteCustomerTags(getInstituteByEmail(email)?.key || ""),
       },
     }
   );

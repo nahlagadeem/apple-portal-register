@@ -5,6 +5,7 @@ import {
   buildInstituteEmail,
   buildInstituteOptions,
   getInstituteByKey,
+  getInstituteCustomerTags,
   normalizeEmailLocalPart,
 } from "../institutes";
 import { unauthenticated } from "../shopify.server";
@@ -212,7 +213,7 @@ async function ensureShopifyCustomer({
       firstName,
       lastName: lastName || undefined,
       phone: phoneSa || undefined,
-      tags: ["student_portal"],
+      tags: getInstituteCustomerTags(institute.key),
       note: noteLines.join("\n"),
     },
   });
