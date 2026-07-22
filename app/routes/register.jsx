@@ -84,6 +84,12 @@ function wantsJson(request) {
   return forceJson || accept.includes("application/json") || requestedWith === "xmlhttprequest";
 }
 
+function getPortalPasswordHash(password, existingUser) {
+  if (password) return hashPassword(password);
+  if (existingUser?.passwordHash) return existingUser.passwordHash;
+  return hashPassword(`disabled:${Date.now()}:${Math.random()}`);
+}
+
 function getStorefrontContext(request, formData) {
   const requestUrl = new URL(request.url);
   return {
@@ -349,8 +355,14 @@ export async function action({ request }) {
     errors.role = role ? "" : "Role is required.";
     errors.roleOther = role === "other" && !roleOther ? "Please specify role." : "";
     errors.phoneSa = phoneSa === null ? "Use 05XXXXXXXX or +9665XXXXXXXX." : "";
-    errors.password = password.length >= 6 ? "" : "Password must be at least 6 characters.";
-    errors.confirmPassword = password === confirmPassword ? "" : "Passwords do not match.";
+    errors.password =
+      password && password.length < 6 ? "Password must be at least 6 characters." : "";
+    errors.confirmPassword =
+      password || confirmPassword
+        ? password === confirmPassword
+          ? ""
+          : "Passwords do not match."
+        : "";
 
     if (Object.values(errors).some(Boolean)) {
       if (jsonMode) return json({ ok: false, errors }, { status: 400 });
@@ -394,7 +406,7 @@ export async function action({ request }) {
               role,
               roleOther: role === "other" ? roleOther : null,
               phoneSa: phoneSa || null,
-              passwordHash: hashPassword(password),
+              passwordHash: getPortalPasswordHash(password, existing),
             },
           })
         : await prisma.portalUser.create({
@@ -406,7 +418,7 @@ export async function action({ request }) {
               role,
               roleOther: role === "other" ? roleOther : null,
               phoneSa: phoneSa || null,
-              passwordHash: hashPassword(password),
+              passwordHash: getPortalPasswordHash(password),
             },
           });
 
