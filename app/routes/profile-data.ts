@@ -676,17 +676,6 @@ export async function action({ request }: { request: Request }) {
       );
     }
 
-    await syncShopifyCustomerProfile({
-      shop,
-      customerId,
-      customerEmail: user.email,
-      fullName,
-      institute: institute.label,
-      role,
-      roleOther,
-      phoneSa: phoneSa || "",
-    });
-
     await prisma.portalUser.update({
       where: { id: user.id },
       data: {
@@ -696,6 +685,24 @@ export async function action({ request }: { request: Request }) {
         roleOther: role === "other" ? roleOther : null,
         phoneSa: phoneSa || null,
       },
+    });
+
+    await syncShopifyCustomerProfile({
+      shop,
+      customerId,
+      customerEmail: user.email,
+      fullName,
+      institute: institute.label,
+      role,
+      roleOther,
+      phoneSa: phoneSa || "",
+    }).catch((error: unknown) => {
+      console.warn("Shopify customer sync failed after portal profile update", {
+        shop,
+        customerId,
+        email: user.email,
+        error: String((error as Error)?.message || error),
+      });
     });
 
     return json({

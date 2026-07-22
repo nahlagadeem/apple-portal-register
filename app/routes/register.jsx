@@ -370,15 +370,17 @@ export async function action({ request }) {
       return { ok: false, errors, pathPrefix, values };
     }
 
-    await ensureShopifyCustomer({
-      shop,
-      email: intent === "complete-native-profile" ? rawEmail : portalEmail,
-      fullName,
-      phoneSa,
-      institute: institute.label,
-      role,
-      roleOther,
-    });
+    if (intent !== "complete-native-profile") {
+      await ensureShopifyCustomer({
+        shop,
+        email: portalEmail,
+        fullName,
+        phoneSa,
+        institute: institute.label,
+        role,
+        roleOther,
+      });
+    }
 
     const user =
       existing && intent === "complete-native-profile"
@@ -414,6 +416,24 @@ export async function action({ request }) {
         customerEmail: intent === "complete-native-profile" ? portalEmail : schoolEmail,
       },
     });
+
+    if (intent === "complete-native-profile") {
+      await ensureShopifyCustomer({
+        shop,
+        email: rawEmail,
+        fullName,
+        phoneSa,
+        institute: institute.label,
+        role,
+        roleOther,
+      }).catch((error) => {
+        console.warn("Shopify customer sync failed after native profile completion", {
+          shop,
+          email: rawEmail,
+          error: String(error?.message || error),
+        });
+      });
+    }
 
     if (jsonMode) {
       return json({
