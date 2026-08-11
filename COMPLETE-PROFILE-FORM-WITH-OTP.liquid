@@ -417,7 +417,7 @@
       if (start === -1) return null;
 
       const valueStart = start + marker.length;
-      const valueEnd = html.indexOf(');</script>', valueStart);
+      const valueEnd = html.indexOf(');<\/script>', valueStart);
       if (valueEnd === -1) return null;
 
       const encodedPayload = html.slice(valueStart, valueEnd);
