@@ -178,8 +178,7 @@ async function ensureShopifyCustomer({
   email,
   fullName,
   phoneSa,
-  instituteKey,
-  instituteLabel,
+  institute,
   role,
   roleOther,
 }) {
@@ -202,7 +201,7 @@ async function ensureShopifyCustomer({
   const { firstName, lastName } = splitName(fullName);
   const noteLines = [
     `Registered via student portal`,
-    `Institute: ${instituteLabel}`,
+    `Institute: ${institute}`,
     `Role: ${role}${role === "other" && roleOther ? ` (${roleOther})` : ""}`,
   ];
   const createCustomerMutation = `
@@ -220,7 +219,7 @@ async function ensureShopifyCustomer({
       firstName,
       lastName: lastName || undefined,
       phone: phoneSa || undefined,
-      tags: getInstituteCustomerTags(instituteKey),
+      tags: getInstituteCustomerTags(institute.key),
       note: noteLines.join("\n"),
     },
   });
@@ -277,11 +276,9 @@ export async function action({ request }) {
     const normalizedLocalPart = normalizeEmailLocalPart(
       formData.get("emailLocalPart") || getEmailLocalPart(rawEmail)
     );
-    const submittedSchoolEmail = normalizeEmail(buildInstituteEmail(instituteKey, normalizedLocalPart));
-    const schoolEmail =
-      intent === "complete-native-profile" ? rawEmail : submittedSchoolEmail;
+    const schoolEmail = normalizeEmail(buildInstituteEmail(instituteKey, normalizedLocalPart));
     const portalEmail =
-      intent === "complete-native-profile" ? rawEmail : submittedSchoolEmail;
+      intent === "complete-native-profile" ? rawEmail : schoolEmail;
     const role = normalizeRole(formData.get("role"));
     const roleOther = String(formData.get("roleOther") || "").trim();
     const phoneSa = normalizeSaudiPhone(formData.get("phoneSa"));
@@ -346,23 +343,14 @@ export async function action({ request }) {
 
     errors.fullName = fullName ? "" : "Full name is required.";
     errors.institute = institute ? "" : "Please choose an institute.";
-    if (intent === "complete-native-profile") {
-      errors.email = isValidEmail(schoolEmail)
-        ? ""
-        : "Log in with your school email using Shopify customer login.";
-      if (!errors.email && institute && !schoolEmail.endsWith(institute.domain)) {
-        errors.email = `Log out and log in with your ${institute.domain} email to verify school access.`;
-      }
-    } else {
-      errors.email =
-        normalizedLocalPart === null
-          ? "Use only the part before @ in your school email."
-          : normalizedLocalPart
-            ? ""
-            : "Email username is required.";
-      if (!errors.email && institute && !isValidEmail(schoolEmail)) {
-        errors.email = `Use your ${institute.domain} school email.`;
-      }
+    errors.email =
+      normalizedLocalPart === null
+        ? "Use only the part before @ in your school email."
+        : normalizedLocalPart
+          ? ""
+          : "Email username is required.";
+    if (!errors.email && institute && !isValidEmail(schoolEmail)) {
+      errors.email = `Use your ${institute.domain} school email.`;
     }
     errors.role = role ? "" : "Role is required.";
     errors.roleOther = role === "other" && !roleOther ? "Please specify role." : "";
@@ -400,8 +388,7 @@ export async function action({ request }) {
         email: portalEmail,
         fullName,
         phoneSa,
-        instituteKey: institute.key,
-        instituteLabel: institute.label,
+        institute: institute.label,
         role,
         roleOther,
       });
@@ -448,8 +435,7 @@ export async function action({ request }) {
         email: rawEmail,
         fullName,
         phoneSa,
-        instituteKey: institute.key,
-        instituteLabel: institute.label,
+        institute: institute.label,
         role,
         roleOther,
       }).catch((error) => {
