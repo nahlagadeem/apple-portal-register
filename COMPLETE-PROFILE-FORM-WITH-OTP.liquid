@@ -321,6 +321,10 @@
       'ksu': '@ksu.edu.sa',
       'kfupm': '@kfupm.edu.sa'
     };
+    const instituteByDomain = Object.keys(instituteDomains).reduce(function (lookup, key) {
+      lookup[instituteDomains[key].toLowerCase()] = key;
+      return lookup;
+    }, {});
 
     const fields = ['fullName', 'email', 'institute', 'role', 'roleOther', 'phoneSa'];
 
@@ -360,6 +364,34 @@
       const domain = instituteDomains[institute.value] || '';
       const localPart = (emailLocalPart.value || '').trim().toLowerCase();
       return localPart && domain ? localPart + domain : '';
+    }
+
+    function getEmailParts(email) {
+      const value = (email || '').trim().toLowerCase();
+      const atIndex = value.lastIndexOf('@');
+      if (atIndex <= 0) return null;
+      return {
+        localPart: value.slice(0, atIndex),
+        domain: value.slice(atIndex)
+      };
+    }
+
+    function applyAccountEmailDefaults() {
+      if (!accountEmailEl) return;
+      const parts = getEmailParts(accountEmailEl.value);
+      if (!parts) return;
+
+      const instituteKey = instituteByDomain[parts.domain];
+      if (!instituteKey) return;
+
+      if (!institute.value) {
+        institute.value = instituteKey;
+        updateEmailDomain();
+      }
+
+      if (!emailLocalPart.value.trim()) {
+        emailLocalPart.value = parts.localPart;
+      }
     }
 
     function validateEmailLocalPart() {
@@ -469,6 +501,7 @@
 
     toggleRoleOther();
     updateEmailDomain();
+    applyAccountEmailDefaults();
 
     const pendingToken = new URLSearchParams(window.location.search).get('pending_profile_token');
     if (pendingToken && accountEmailEl) {

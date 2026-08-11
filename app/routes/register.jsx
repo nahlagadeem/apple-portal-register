@@ -5,6 +5,7 @@ import prisma from "../db.server";
 import {
   buildInstituteEmail,
   buildInstituteOptions,
+  getInstituteByEmail,
   getInstituteByLabel,
   getInstituteByKey,
   getInstituteCustomerTags,
@@ -341,6 +342,45 @@ async function deleteShopifyCustomerById({ shop, customerId }) {
   return deleted?.data?.customerDelete?.deletedCustomerId || null;
 }
 
+async function deleteShopifyCustomerByEmail({ shop, email }) {
+  if (!shop || !email) return null;
+
+  const admin = await getAdminForShop(shop);
+  const found = await shopifyGraphql(
+    admin,
+    `
+      query FindCustomerByEmail($q: String!) {
+        customers(first: 1, query: $q) {
+          edges {
+            node { id email }
+          }
+        }
+      }
+    `,
+    { q: `email:${email}` }
+  );
+
+  const customerId = found?.data?.customers?.edges?.[0]?.node?.id;
+  if (!customerId) return null;
+
+  const deleted = await shopifyGraphql(
+    admin,
+    `
+      mutation DeleteCustomer($id: ID!) {
+        customerDelete(input: { id: $id }) {
+          deletedCustomerId
+          userErrors { field message }
+        }
+      }
+    `,
+    { id: customerId }
+  );
+
+  const userErrors = deleted?.data?.customerDelete?.userErrors || [];
+  if (userErrors.length) throw new Error(userErrors.map((x) => x.message).join(", "));
+  return deleted?.data?.customerDelete?.deletedCustomerId || null;
+}
+
 async function savePortalProfile({
   shop,
   email,
@@ -392,7 +432,7 @@ async function savePortalProfile({
     email,
     fullName,
     phoneSa,
-    institute: institute.label,
+    institute,
     role,
     roleOther,
   }).catch((error) => {
@@ -511,7 +551,8 @@ export async function action({ request }) {
         return json({ ok: false, errors: { ...errors, institute: "Selected institute is no longer available." } }, { status: 400 });
       }
 
-      const accountEmail = pending.originalEmail || pending.schoolEmail;
+      const originalEmail = pending.originalEmail || pending.schoolEmail;
+      const accountEmail = pending.schoolEmail;
       await savePortalProfile({
         shop,
         email: accountEmail,
@@ -547,29 +588,50 @@ export async function action({ request }) {
         },
       });
 
-      if (accountEmail !== pending.schoolEmail) {
+      if (originalEmail && originalEmail !== pending.schoolEmail) {
         await prisma.portalUser.deleteMany({
-          where: { email: pending.schoolEmail },
+          where: {
+            OR: [{ email: originalEmail }, { schoolEmail: originalEmail }],
+          },
         });
 
         await prisma.profilePromptState.deleteMany({
           where: {
             shop,
-            customerEmail: { in: [accountEmail, pending.schoolEmail] },
+            customerEmail: { in: [originalEmail, pending.schoolEmail] },
           },
         });
 
         await deleteShopifyCustomerById({
           shop,
-          customerId: loggedInCustomerId,
+          customerId: pending.loggedInCustomerId,
         }).catch((error) => {
-          console.warn("Temporary school-email Shopify customer cleanup failed", {
+          console.warn("Original Shopify customer cleanup by id failed", {
             shop,
-            accountEmail,
+            originalEmail,
             schoolEmail: pending.schoolEmail,
-            customerId: loggedInCustomerId,
+            customerId: pending.loggedInCustomerId,
             error: String(error?.message || error),
           });
+        });
+
+        await deleteShopifyCustomerByEmail({
+          shop,
+          email: originalEmail,
+        }).catch((error) => {
+          console.warn("Original Shopify customer cleanup by email failed", {
+            shop,
+            originalEmail,
+            schoolEmail: pending.schoolEmail,
+            error: String(error?.message || error),
+          });
+        });
+
+        await prisma.schoolEmailVerification.deleteMany({
+          where: {
+            accountEmail,
+            schoolEmail: originalEmail,
+          },
         });
       }
 
@@ -579,10 +641,7 @@ export async function action({ request }) {
         ok: true,
         linkedAccountEmail: accountEmail,
         verifiedSchoolEmail: pending.schoolEmail,
-        redirectUrl:
-          accountEmail && accountEmail !== pending.schoolEmail
-            ? buildShopifyLoginRedirect(pending.returnTo || "/", accountEmail)
-            : pending.returnTo || "/",
+        redirectUrl: pending.returnTo || "/",
       });
     }
 
@@ -592,6 +651,55 @@ export async function action({ request }) {
       if (errors.email) {
         if (jsonMode) return json({ ok: false, errors }, { status: 400 });
         return { ok: false, errors, pathPrefix };
+      }
+
+      const skipInstitute = getInstituteByEmail(skipEmail);
+      if (skipInstitute) {
+        await savePortalProfile({
+          shop,
+          email: skipEmail,
+          schoolEmail: skipEmail,
+          fullName: skipEmail,
+          institute: skipInstitute,
+          role: "student",
+          roleOther: "",
+          phoneSa: "",
+          passwordHash: getPortalPasswordHash(""),
+        });
+
+        await prisma.schoolEmailVerification.upsert({
+          where: {
+            shop_accountEmail_schoolEmail: {
+              shop,
+              accountEmail: skipEmail,
+              schoolEmail: skipEmail,
+            },
+          },
+          update: {
+            accountCustomerId: loggedInCustomerId || null,
+            schoolCustomerId: loggedInCustomerId || null,
+            verifiedAt: new Date(),
+          },
+          create: {
+            shop,
+            accountEmail: skipEmail,
+            schoolEmail: skipEmail,
+            accountCustomerId: loggedInCustomerId || null,
+            schoolCustomerId: loggedInCustomerId || null,
+            verifiedAt: new Date(),
+          },
+        });
+
+        if (jsonMode) {
+          return json({
+            ok: true,
+            skipped: false,
+            completedProfile: true,
+            redirectUrl: `https://${shop}${returnTo || "/"}`,
+          });
+        }
+
+        return redirect(returnTo || "/");
       }
 
       await prisma.profilePromptState.upsert({
