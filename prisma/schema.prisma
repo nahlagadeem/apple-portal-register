@@ -58,3 +58,22 @@ model ProfilePromptState {
 
   @@unique([shop, customerEmail])
 }
+
+model PendingNativeProfile {
+  id                 Int      @id @default(autoincrement())
+  token              String   @unique
+  shop               String
+  originalEmail      String?
+  schoolEmail        String
+  loggedInCustomerId String?
+  fullName           String
+  instituteKey       String
+  role               String
+  roleOther          String?
+  phoneSa            String?
+  passwordHash       String
+  returnTo           String
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}

@@ -168,4 +168,51 @@ export async function ensurePortalUserTable() {
     CREATE UNIQUE INDEX IF NOT EXISTS "ProfilePromptState_shop_customerEmail_key"
     ON "ProfilePromptState"("shop", "customerEmail");
   `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "PendingNativeProfile" (
+      "id" SERIAL NOT NULL,
+      "token" TEXT NOT NULL,
+      "shop" TEXT NOT NULL,
+      "originalEmail" TEXT,
+      "schoolEmail" TEXT NOT NULL,
+      "loggedInCustomerId" TEXT,
+      "fullName" TEXT NOT NULL,
+      "instituteKey" TEXT NOT NULL,
+      "role" TEXT NOT NULL,
+      "roleOther" TEXT,
+      "phoneSa" TEXT,
+      "passwordHash" TEXT NOT NULL,
+      "returnTo" TEXT NOT NULL,
+      "expiresAt" TIMESTAMP(3) NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "PendingNativeProfile_pkey" PRIMARY KEY ("id")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "token" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "shop" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "originalEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "schoolEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "loggedInCustomerId" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "fullName" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "instituteKey" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "role" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "roleOther" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "phoneSa" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "passwordHash" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "returnTo" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "expiresAt" TIMESTAMP(3)`);
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "PendingNativeProfile" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "PendingNativeProfile_token_key"
+    ON "PendingNativeProfile"("token");
+  `);
 }

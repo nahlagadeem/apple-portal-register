@@ -1,0 +1,549 @@
+{% if customer %}
+  <section class="student-register">
+    <div class="student-register__bg-shape student-register__bg-shape--one"></div>
+    <div class="student-register__bg-shape student-register__bg-shape--two"></div>
+
+    <div class="page-width">
+      <div class="student-register__wrap">
+        <h4 class="student-register__title">Complete your profile</h4>
+
+        <div class="student-register__card">
+          <form
+            id="StudentRegisterForm"
+            method="post"
+            action="/apps/student-register/register"
+            class="student-register__form"
+            novalidate
+          >
+            <input type="hidden" name="intent" value="complete-native-profile">
+            <input type="hidden" name="return_to" value="/">
+            <input type="hidden" name="resume_path" value="{{ request.path }}">
+            <input type="hidden" name="shop" value="{{ shop.permanent_domain }}">
+            <input type="hidden" name="logged_in_customer_id" value="{{ customer.id }}">
+            <input type="hidden" id="accountEmail" name="email" value="{{ customer.email }}">
+
+            <div id="registerStatus" class="student-register__status" aria-live="polite"></div>
+
+            <div class="student-register__field">
+              <label for="fullName">Full name</label>
+              <input id="fullName" type="text" name="fullName" required>
+              <small class="student-register__error" data-error-for="fullName"></small>
+            </div>
+
+            <div class="student-register__field">
+              <label for="institute">Institute</label>
+              <select id="institute" name="institute" required>
+                <option value="">Choose your institute</option>
+                <optgroup label="Testing">
+                  <option value="maildrop-test">Maildrop Test School</option>
+                </optgroup>
+                <optgroup label="K12">
+                  <option value="owis-riyadh">One World International School Riyadh</option>
+                  <option value="sek">SEK International School</option>
+                  <option value="riyadh-schools-malqa">Riyadh Schools Al-Malqa Branch</option>
+                  <option value="riyadh-schools-hittin">Riyadh Schools Hittin Branch</option>
+                  <option value="bisr">British International School Riyadh</option>
+                  <option value="bisj">British International School Jeddah</option>
+                  <option value="aisr">American International School Riyadh</option>
+                  <option value="aldenham">Aldenham Prep School</option>
+                  <option value="king-faisal-school">King Faisal School</option>
+                  <option value="brooke-house">Brooke House College</option>
+                </optgroup>
+                <optgroup label="Hi-Edu / Uni">
+                  <option value="pnu">Princess Nourah Bint Abdulrahman University</option>
+                  <option value="alfaisal">AlFaisal University</option>
+                  <option value="imamu">Imam Mohammad Ibn Saud Islamic University</option>
+                  <option value="kau">King AbdulAziz University</option>
+                  <option value="aou">Arab Open University</option>
+                  <option value="kaust">King Abdullah University of Science and Technology</option>
+                  <option value="mu">Majmaa University</option>
+                  <option value="ksu">King Saud University</option>
+                  <option value="kfupm">King Fahd University of Petroleum and Minerals</option>
+                </optgroup>
+              </select>
+              <small class="student-register__error" data-error-for="institute"></small>
+            </div>
+
+            <div class="student-register__field">
+              <label for="emailLocalPart">School email</label>
+              <div class="student-register__email-row">
+                <input
+                  id="emailLocalPart"
+                  type="text"
+                  name="emailLocalPart"
+                  placeholder="Enter the part before @"
+                  autocomplete="off"
+                  required
+                >
+                <span id="emailDomain" class="student-register__email-domain">@school-domain</span>
+              </div>
+              <small class="student-register__hint">
+                Current Shopify account email: {{ customer.email }}
+              </small>
+              <small class="student-register__error" data-error-for="email"></small>
+            </div>
+
+            <div class="student-register__grid">
+              <div class="student-register__field">
+                <label for="role">Role</label>
+                <select id="role" name="role" required>
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="parent">Parent</option>
+                  <option value="other">Other</option>
+                </select>
+                <small class="student-register__error" data-error-for="role"></small>
+              </div>
+
+              <div class="student-register__field">
+                <label for="roleOther">Role (if Other)</label>
+                <input id="roleOther" type="text" name="roleOther" disabled>
+                <small class="student-register__error" data-error-for="roleOther"></small>
+              </div>
+            </div>
+
+            <div class="student-register__field">
+              <label for="phoneSa">Saudi phone (optional)</label>
+              <input
+                id="phoneSa"
+                type="text"
+                name="phoneSa"
+                placeholder="05XXXXXXXX or +9665XXXXXXXX"
+                pattern="^(05\d{8}|\+9665\d{8})$"
+                title="Use 05XXXXXXXX or +9665XXXXXXXX"
+              >
+              <small class="student-register__error" data-error-for="phoneSa"></small>
+            </div>
+
+            {% comment %}
+            Password fields temporarily hidden. Backend accepts register/profile completion without password.
+            {% endcomment %}
+
+            <button type="submit" class="student-register__btn button">Save profile</button>
+            <button type="button" id="StudentSkipBtn" class="student-register__btn button button--secondary">Skip for now</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+{% else %}
+  <section class="student-register">
+    <div class="student-register__bg-shape student-register__bg-shape--one"></div>
+    <div class="student-register__bg-shape student-register__bg-shape--two"></div>
+
+    <div class="page-width">
+      <div class="student-register__wrap">
+        <h4 class="student-register__title">Fill the form to Sign up</h4>
+
+        <div class="student-register__card">
+          <form
+            id="StudentRegisterForm"
+            method="post"
+            action="/apps/student-register/register"
+            class="student-register__form"
+            novalidate
+          >
+            <input type="hidden" name="intent" value="register">
+            <input type="hidden" name="resume_path" value="{{ request.path }}">
+
+            <div id="registerStatus" class="student-register__status" aria-live="polite"></div>
+
+            <div class="student-register__field">
+              <label for="fullName">Full name</label>
+              <input id="fullName" type="text" name="fullName" required>
+              <small class="student-register__error" data-error-for="fullName"></small>
+            </div>
+
+            <div class="student-register__field">
+              <label for="institute">Institute</label>
+              <select id="institute" name="institute" required>
+                <option value="">Choose your institute</option>
+                <optgroup label="Testing">
+                  <option value="maildrop-test">Maildrop Test School</option>
+                </optgroup>
+                <optgroup label="K12">
+                  <option value="owis-riyadh">One World International School Riyadh</option>
+                  <option value="sek">SEK International School</option>
+                  <option value="riyadh-schools-malqa">Riyadh Schools Al-Malqa Branch</option>
+                  <option value="riyadh-schools-hittin">Riyadh Schools Hittin Branch</option>
+                  <option value="bisr">British International School Riyadh</option>
+                  <option value="bisj">British International School Jeddah</option>
+                  <option value="aisr">American International School Riyadh</option>
+                  <option value="aldenham">Aldenham Prep School</option>
+                  <option value="king-faisal-school">King Faisal School</option>
+                  <option value="brooke-house">Brooke House College</option>
+                </optgroup>
+                <optgroup label="Hi-Edu / Uni">
+                  <option value="pnu">Princess Nourah Bint Abdulrahman University</option>
+                  <option value="alfaisal">AlFaisal University</option>
+                  <option value="imamu">Imam Mohammad Ibn Saud Islamic University</option>
+                  <option value="kau">King AbdulAziz University</option>
+                  <option value="aou">Arab Open University</option>
+                  <option value="kaust">King Abdullah University of Science and Technology</option>
+                  <option value="mu">Majmaa University</option>
+                  <option value="ksu">King Saud University</option>
+                  <option value="kfupm">King Fahd University of Petroleum and Minerals</option>
+                </optgroup>
+              </select>
+              <small class="student-register__error" data-error-for="institute"></small>
+            </div>
+
+            <div class="student-register__field">
+              <label for="emailLocalPart">School email</label>
+              <div class="student-register__email-row">
+                <input
+                  id="emailLocalPart"
+                  type="text"
+                  name="emailLocalPart"
+                  placeholder="Enter the part before @"
+                  autocomplete="off"
+                  required
+                >
+                <span id="emailDomain" class="student-register__email-domain">@school-domain</span>
+              </div>
+              <small class="student-register__error" data-error-for="email"></small>
+            </div>
+
+            <div class="student-register__grid">
+              <div class="student-register__field">
+                <label for="role">Role</label>
+                <select id="role" name="role" required>
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="parent">Parent</option>
+                  <option value="other">Other</option>
+                </select>
+                <small class="student-register__error" data-error-for="role"></small>
+              </div>
+
+              <div class="student-register__field">
+                <label for="roleOther">Role (if Other)</label>
+                <input id="roleOther" type="text" name="roleOther" disabled>
+                <small class="student-register__error" data-error-for="roleOther"></small>
+              </div>
+            </div>
+
+            <div class="student-register__field">
+              <label for="phoneSa">Saudi phone (optional)</label>
+              <input
+                id="phoneSa"
+                type="text"
+                name="phoneSa"
+                placeholder="05XXXXXXXX or +9665XXXXXXXX"
+                pattern="^(05\d{8}|\+9665\d{8})$"
+                title="Use 05XXXXXXXX or +9665XXXXXXXX"
+              >
+              <small class="student-register__error" data-error-for="phoneSa"></small>
+            </div>
+
+            {% comment %}
+            Password fields temporarily hidden. Backend accepts register/profile completion without password.
+            {% endcomment %}
+
+            <button type="submit" class="student-register__btn button">Create account</button>
+
+            <p class="student-register__footnote">
+              Already have an account?
+              <a href="{% if request.design_mode %}{{ routes.account_url }}{% else %}{{ routes.storefront_login_url }}{% endif %}{% if routes.storefront_login_url contains '?' %}&{% else %}?{% endif %}return_url={{ routes.root_url | url_encode }}">Login</a>
+            </p>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endif %}
+
+<style>
+  .student-register__status { margin-bottom: 12px; font-size: 14px; }
+  .student-register__status.is-error { color: #c62828; }
+  .student-register__status.is-success { color: #1b5e20; }
+  .student-register__error { color: #c62828; font-size: 12px; display: block; margin-top: 4px; min-height: 16px; }
+  .student-register__hint { color: #666; font-size: 12px; display: block; margin-top: 4px; }
+  .student-register__email-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .student-register__email-row input {
+    flex: 1 1 220px;
+    min-width: 180px;
+  }
+  .student-register__email-domain {
+    min-width: 140px;
+    padding: 10px 12px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 6px;
+    background: #f7f7f7;
+    color: #333;
+    line-height: 1.2;
+  }
+</style>
+
+<script>
+  (function () {
+    const form = document.getElementById('StudentRegisterForm');
+    if (!form) return;
+
+    const institute = form.querySelector('#institute');
+    const emailLocalPart = form.querySelector('#emailLocalPart');
+    const emailDomain = form.querySelector('#emailDomain');
+    const role = form.querySelector('#role');
+    const roleOther = form.querySelector('#roleOther');
+    const password = form.querySelector('#password');
+    const confirmPassword = form.querySelector('#confirmPassword');
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const skipBtn = document.getElementById('StudentSkipBtn');
+    const statusEl = form.querySelector('#registerStatus');
+    const accountEmailEl = form.querySelector('#accountEmail');
+
+    const instituteDomains = {
+      'maildrop-test': '@maildrop.cc',
+      'owis-riyadh': '@owis.org',
+      'sek': '@sek.sa',
+      'riyadh-schools-malqa': '@rsm.edu.sa',
+      'riyadh-schools-hittin': '@rsh.edu.sa',
+      'bisr': '@bisr.com.sa',
+      'bisj': '@conti.sch.sa',
+      'aisr': '@aisr.org',
+      'aldenham': '@aldenham.org',
+      'king-faisal-school': '@kfs.sc',
+      'brooke-house': '@bhc-riyadh.com',
+      'pnu': '@pnu.edu.sa',
+      'alfaisal': '@alfaisal.edu',
+      'imamu': '@imamu.edu.sa',
+      'kau': '@kau.edu.sa',
+      'aou': '@aou.edu.sa',
+      'kaust': '@kaust.edu.sa',
+      'mu': '@mu.edu.sa',
+      'ksu': '@ksu.edu.sa',
+      'kfupm': '@kfupm.edu.sa'
+    };
+
+    const fields = ['fullName', 'email', 'institute', 'role', 'roleOther', 'phoneSa'];
+
+    function setStatus(message, type) {
+      statusEl.textContent = message || '';
+      statusEl.className = 'student-register__status' + (type ? ' is-' + type : '');
+    }
+
+    function setFieldError(name, message) {
+      const el = form.querySelector('[name="' + name + '"]');
+      const err = form.querySelector('[data-error-for="' + name + '"]');
+      if (el) el.setCustomValidity(message || '');
+      if (err) err.textContent = message || '';
+    }
+
+    function clearErrors() {
+      fields.forEach(function (name) { setFieldError(name, ''); });
+      setStatus('', '');
+    }
+
+    function toggleRoleOther() {
+      const isOther = role.value === 'other';
+      roleOther.disabled = !isOther;
+      roleOther.required = isOther;
+      if (!isOther) {
+        roleOther.value = '';
+        setFieldError('roleOther', '');
+      }
+    }
+
+    function updateEmailDomain() {
+      const domain = instituteDomains[institute.value] || '@school-domain';
+      emailDomain.textContent = domain;
+    }
+
+    function getSchoolEmail() {
+      const domain = instituteDomains[institute.value] || '';
+      const localPart = (emailLocalPart.value || '').trim().toLowerCase();
+      return localPart && domain ? localPart + domain : '';
+    }
+
+    function validateEmailLocalPart() {
+      const value = (emailLocalPart.value || '').trim();
+      if (!value) {
+        setFieldError('email', 'Email username is required.');
+        return false;
+      }
+
+      if (value.indexOf('@') !== -1) {
+        setFieldError('email', 'Use only the part before @ in your school email.');
+        return false;
+      }
+
+      if (!/^[a-zA-Z0-9._%+-]+$/.test(value)) {
+        setFieldError('email', 'Use only letters, numbers, and . _ % + -');
+        return false;
+      }
+
+      setFieldError('email', '');
+      return true;
+    }
+
+    function applyServerErrors(errors) {
+      Object.keys(errors || {}).forEach(function (key) {
+        if (key === 'general') return;
+        setFieldError(key, errors[key]);
+      });
+      if (errors && errors.general) setStatus(errors.general, 'error');
+    }
+
+    async function postForm(formData) {
+      const res = await fetch('/apps/student-register/register?response=json' + window.location.search.replace('?', '&'), {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+
+      const data = await res.json().catch(function () { return null; });
+      if (!res.ok || !data) {
+        const errors = data && data.errors ? data.errors : {};
+        applyServerErrors(errors);
+        throw new Error((errors && (errors.general || errors.email)) || 'Could not save right now.');
+      }
+
+      return data;
+    }
+
+    async function finalizePendingProfile(token) {
+      if (!accountEmailEl) return;
+
+      setStatus('Finishing verified profile...', 'success');
+      submitBtn.disabled = true;
+      if (skipBtn) skipBtn.disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append('intent', 'finalize-native-profile');
+        formData.append('pending_profile_token', token);
+        formData.append('email', accountEmailEl.value);
+        formData.append('shop', '{{ shop.permanent_domain }}');
+        formData.append('logged_in_customer_id', '{{ customer.id }}');
+        formData.append('resume_path', '{{ request.path }}');
+
+        const data = await postForm(formData);
+        if (data.redirectUrl) {
+          window.location.replace(data.redirectUrl);
+          return;
+        }
+
+        setStatus('Profile completed.', 'success');
+      } catch (error) {
+        setStatus(error.message || 'Could not finish profile.', 'error');
+      } finally {
+        submitBtn.disabled = false;
+        if (skipBtn) skipBtn.disabled = false;
+      }
+    }
+
+    role.addEventListener('change', toggleRoleOther);
+    institute.addEventListener('change', function () {
+      updateEmailDomain();
+      setFieldError('institute', '');
+      setFieldError('email', '');
+    });
+
+    emailLocalPart.addEventListener('input', function () {
+      if (emailLocalPart.value.indexOf('@') !== -1) {
+        emailLocalPart.value = emailLocalPart.value.split('@')[0];
+      }
+      setFieldError('email', '');
+    });
+
+    toggleRoleOther();
+    updateEmailDomain();
+
+    const pendingToken = new URLSearchParams(window.location.search).get('pending_profile_token');
+    if (pendingToken && accountEmailEl) {
+      finalizePendingProfile(pendingToken);
+    }
+
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      clearErrors();
+
+      if (!institute.value) {
+        setFieldError('institute', 'Please choose an institute.');
+      }
+
+      if (!validateEmailLocalPart()) {
+        setStatus('Please fix the highlighted fields.', 'error');
+        form.reportValidity();
+        return;
+      }
+
+      if (password && confirmPassword && password.value !== confirmPassword.value) {
+        setFieldError('confirmPassword', 'Passwords do not match.');
+      }
+
+      if (role && role.value === 'other' && roleOther && !roleOther.value.trim()) {
+        setFieldError('roleOther', 'Please specify your role.');
+      }
+
+      if (!form.checkValidity()) {
+        setStatus('Please fix the highlighted fields.', 'error');
+        form.reportValidity();
+        return;
+      }
+
+      setStatus(accountEmailEl && accountEmailEl.value.toLowerCase() !== getSchoolEmail()
+        ? 'Redirecting to Shopify to verify ' + getSchoolEmail() + '...'
+        : 'Saving...', 'success');
+      submitBtn.disabled = true;
+      if (skipBtn) skipBtn.disabled = true;
+
+      try {
+        const data = await postForm(new FormData(form));
+        if (data.redirectUrl) {
+          window.location.replace(data.redirectUrl);
+          return;
+        }
+
+        setStatus('Profile saved.', 'success');
+      } catch (error) {
+        setStatus(error.message || 'Could not save right now.', 'error');
+      } finally {
+        submitBtn.disabled = false;
+        if (skipBtn) skipBtn.disabled = false;
+      }
+    });
+
+    if (skipBtn) {
+      skipBtn.addEventListener('click', async function () {
+        clearErrors();
+
+        const originalText = skipBtn.textContent;
+        skipBtn.disabled = true;
+        submitBtn.disabled = true;
+        skipBtn.textContent = 'Skipping...';
+
+        try {
+          const formData = new FormData();
+          formData.append('intent', 'skip-native-profile');
+          formData.append('email', accountEmailEl ? accountEmailEl.value : '{{ customer.email }}');
+          formData.append('shop', '{{ shop.permanent_domain }}');
+          formData.append('logged_in_customer_id', '{{ customer.id }}');
+          formData.append('return_to', '/collections/all');
+
+          const data = await postForm(formData);
+          setStatus('Skipped. Redirecting...', 'success');
+          setTimeout(function () {
+            window.location.replace(data.redirectUrl || '/collections/all');
+          }, 150);
+        } catch (error) {
+          setStatus(error.message || 'Could not skip right now.', 'error');
+        } finally {
+          setTimeout(function () {
+            skipBtn.disabled = false;
+            submitBtn.disabled = false;
+            skipBtn.textContent = originalText;
+          }, 200);
+        }
+      });
+    }
+  })();
+</script>

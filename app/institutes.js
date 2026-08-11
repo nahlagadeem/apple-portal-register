@@ -15,6 +15,13 @@ export const INSTITUTES = [
   { key: "aldenham", segment: "K12", label: "Aldenham Prep School", domain: "@aldenham.org" },
   { key: "king-faisal-school", segment: "K12", label: "King Faisal School", domain: "@kfs.sc" },
   { key: "brooke-house", segment: "K12", label: "Brooke House College", domain: "@bhc-riyadh.com" },
+  {
+    key: "maildrop-test",
+    segment: "Testing",
+    label: "Maildrop Test School",
+    domain: "@maildrop.cc",
+    allowedBundleCollections: ["all-bundles"],
+  },
   { key: "pnu", segment: "Hi-Edu / Uni", label: "Princess Nourah Bint Abdulrahman University", domain: "@pnu.edu.sa" },
   { key: "alfaisal", segment: "Hi-Edu / Uni", label: "AlFaisal University", domain: "@alfaisal.edu" },
   { key: "imamu", segment: "Hi-Edu / Uni", label: "Imam Mohammad Ibn Saud Islamic University", domain: "@imamu.edu.sa" },

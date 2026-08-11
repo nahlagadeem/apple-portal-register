@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { useState } from "react";
 import { Form, Link, redirect, useActionData, useLoaderData } from "react-router";
 import prisma from "../db.server";
@@ -26,6 +27,7 @@ const JSON_HEADERS = {
   "Cache-Control": "no-store",
 };
 const INSTITUTE_OPTIONS = buildInstituteOptions();
+const PENDING_PROFILE_TTL_MINUTES = 30;
 
 function json(data, init = {}) {
   return new Response(JSON.stringify(data), {
@@ -51,6 +53,10 @@ function normalizeReturnTo(value, fallback = "/pages/student-profile") {
   if (raw.startsWith("//")) return fallback;
   if (raw.includes("://")) return fallback;
   return raw;
+}
+
+function normalizeResumePath(value) {
+  return normalizeReturnTo(value, "/pages/student-profile");
 }
 
 function normalizeShopDomain(input) {
@@ -88,6 +94,15 @@ function getPortalPasswordHash(password, existingUser) {
   if (password) return hashPassword(password);
   if (existingUser?.passwordHash) return existingUser.passwordHash;
   return hashPassword(`disabled:${Date.now()}:${Math.random()}`);
+}
+
+function generatePendingProfileToken() {
+  return crypto.randomBytes(24).toString("hex");
+}
+
+function buildShopifyLoginRedirect(resumePath) {
+  const loginPath = `/account/login?return_url=${encodeURIComponent(resumePath)}`;
+  return `/account/logout?return_url=${encodeURIComponent(loginPath)}`;
 }
 
 function getStorefrontContext(request, formData) {
@@ -233,6 +248,71 @@ async function ensureShopifyCustomer({
   return created?.data?.customerCreate?.customer?.id || null;
 }
 
+async function savePortalProfile({
+  shop,
+  email,
+  schoolEmail,
+  fullName,
+  institute,
+  role,
+  roleOther,
+  phoneSa,
+  passwordHash,
+}) {
+  const existing = await prisma.portalUser.findUnique({ where: { email } });
+  const user = existing
+    ? await prisma.portalUser.update({
+        where: { id: existing.id },
+        data: {
+          fullName,
+          email,
+          schoolEmail: schoolEmail || null,
+          institute: institute.label,
+          role,
+          roleOther: role === "other" ? roleOther : null,
+          phoneSa: phoneSa || null,
+          passwordHash: passwordHash || existing.passwordHash,
+        },
+      })
+    : await prisma.portalUser.create({
+        data: {
+          fullName,
+          email,
+          schoolEmail: schoolEmail || null,
+          institute: institute.label,
+          role,
+          roleOther: role === "other" ? roleOther : null,
+          phoneSa: phoneSa || null,
+          passwordHash: passwordHash || getPortalPasswordHash(""),
+        },
+      });
+
+  await prisma.profilePromptState.deleteMany({
+    where: {
+      shop,
+      customerEmail: email,
+    },
+  });
+
+  await ensureShopifyCustomer({
+    shop,
+    email,
+    fullName,
+    phoneSa,
+    institute: institute.label,
+    role,
+    roleOther,
+  }).catch((error) => {
+    console.warn("Shopify customer sync failed after native profile completion", {
+      shop,
+      email,
+      error: String(error?.message || error),
+    });
+  });
+
+  return user;
+}
+
 export async function loader({ request }) {
   const userId = await getUserId(request);
   const pathPrefix = withPathPrefix(request, "").replace(/\/$/, "");
@@ -301,6 +381,61 @@ export async function action({ request }) {
       errors.general = "Missing shop context. Open this form from your storefront.";
       if (jsonMode) return json({ ok: false, errors }, { status: 400 });
       return { ok: false, errors, pathPrefix };
+    }
+
+    if (intent === "finalize-native-profile") {
+      const token = String(formData.get("pending_profile_token") || "").trim();
+      if (!token) {
+        return json({ ok: false, errors: { ...errors, general: "Missing profile verification token." } }, { status: 400 });
+      }
+
+      const pending = await prisma.pendingNativeProfile.findUnique({ where: { token } });
+      if (!pending || pending.expiresAt.getTime() < Date.now()) {
+        return json({ ok: false, errors: { ...errors, general: "Profile verification expired. Submit the form again." } }, { status: 410 });
+      }
+
+      if (pending.shop !== shop) {
+        return json({ ok: false, errors: { ...errors, general: "Shop context changed. Submit the form again." } }, { status: 400 });
+      }
+
+      if (!rawEmail || rawEmail !== pending.schoolEmail) {
+        const resumeBase = normalizeResumePath(formData.get("resume_path"));
+        const resumePath = `${resumeBase}${resumeBase.includes("?") ? "&" : "?"}pending_profile_token=${encodeURIComponent(token)}`;
+        return json({
+          ok: false,
+          requiresShopifyLogin: true,
+          redirectUrl: buildShopifyLoginRedirect(resumePath),
+          errors: {
+            ...errors,
+            email: `Shopify verified ${rawEmail || "another email"}. Sign in with ${pending.schoolEmail} to finish.`,
+          },
+        }, { status: 403 });
+      }
+
+      const pendingInstitute = getInstituteByKey(pending.instituteKey);
+      if (!pendingInstitute) {
+        await prisma.pendingNativeProfile.delete({ where: { id: pending.id } }).catch(() => null);
+        return json({ ok: false, errors: { ...errors, institute: "Selected institute is no longer available." } }, { status: 400 });
+      }
+
+      await savePortalProfile({
+        shop,
+        email: pending.schoolEmail,
+        schoolEmail: pending.schoolEmail,
+        fullName: pending.fullName,
+        institute: pendingInstitute,
+        role: pending.role,
+        roleOther: pending.roleOther || "",
+        phoneSa: pending.phoneSa || "",
+        passwordHash: pending.passwordHash,
+      });
+
+      await prisma.pendingNativeProfile.delete({ where: { id: pending.id } });
+
+      return json({
+        ok: true,
+        redirectUrl: pending.returnTo || "/",
+      });
     }
 
     if (intent === "skip-native-profile") {
@@ -373,6 +508,43 @@ export async function action({ request }) {
       errors.email = "Missing customer account email.";
       if (jsonMode) return json({ ok: false, errors }, { status: 400 });
       return { ok: false, errors, pathPrefix, values };
+    }
+
+    if (intent === "complete-native-profile" && rawEmail !== schoolEmail) {
+      const token = generatePendingProfileToken();
+      const resumeBase = normalizeResumePath(formData.get("resume_path"));
+      const resumePath = `${resumeBase}${resumeBase.includes("?") ? "&" : "?"}pending_profile_token=${encodeURIComponent(token)}`;
+      const redirectUrl = buildShopifyLoginRedirect(resumePath);
+
+      await prisma.pendingNativeProfile.create({
+        data: {
+          token,
+          shop,
+          originalEmail: rawEmail || null,
+          schoolEmail,
+          loggedInCustomerId: loggedInCustomerId || null,
+          fullName,
+          instituteKey: institute.key,
+          role,
+          roleOther: role === "other" ? roleOther : null,
+          phoneSa: phoneSa || null,
+          passwordHash: getPortalPasswordHash(password),
+          returnTo,
+          expiresAt: new Date(Date.now() + PENDING_PROFILE_TTL_MINUTES * 60 * 1000),
+        },
+      });
+
+      if (jsonMode) {
+        return json({
+          ok: true,
+          requiresShopifyLogin: true,
+          schoolEmail,
+          redirectUrl,
+          message: `Verify ${schoolEmail} with Shopify login to finish your profile.`,
+        });
+      }
+
+      return redirect(redirectUrl);
     }
 
     const existing = await prisma.portalUser.findUnique({ where: { email: portalEmail } });
