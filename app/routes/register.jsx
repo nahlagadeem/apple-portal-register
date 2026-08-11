@@ -446,6 +446,111 @@ async function savePortalProfile({
   return user;
 }
 
+async function completePendingNativeProfile({
+  pending,
+  shop,
+  schoolCustomerId,
+}) {
+  const pendingInstitute = getInstituteByKey(pending.instituteKey);
+  if (!pendingInstitute) {
+    await prisma.pendingNativeProfile.delete({ where: { id: pending.id } }).catch(() => null);
+    throw new Error("Selected institute is no longer available.");
+  }
+
+  const originalEmail = pending.originalEmail || pending.schoolEmail;
+  const accountEmail = pending.schoolEmail;
+
+  await savePortalProfile({
+    shop,
+    email: accountEmail,
+    schoolEmail: pending.schoolEmail,
+    fullName: pending.fullName,
+    institute: pendingInstitute,
+    role: pending.role,
+    roleOther: pending.roleOther || "",
+    phoneSa: pending.phoneSa || "",
+    passwordHash: pending.passwordHash,
+  });
+
+  await prisma.schoolEmailVerification.upsert({
+    where: {
+      shop_accountEmail_schoolEmail: {
+        shop,
+        accountEmail,
+        schoolEmail: pending.schoolEmail,
+      },
+    },
+    update: {
+      accountCustomerId: schoolCustomerId || null,
+      schoolCustomerId: schoolCustomerId || null,
+      verifiedAt: new Date(),
+    },
+    create: {
+      shop,
+      accountEmail,
+      schoolEmail: pending.schoolEmail,
+      accountCustomerId: schoolCustomerId || null,
+      schoolCustomerId: schoolCustomerId || null,
+      verifiedAt: new Date(),
+    },
+  });
+
+  if (originalEmail && originalEmail !== pending.schoolEmail) {
+    await prisma.portalUser.deleteMany({
+      where: {
+        OR: [{ email: originalEmail }, { schoolEmail: originalEmail }],
+      },
+    });
+
+    await prisma.profilePromptState.deleteMany({
+      where: {
+        shop,
+        customerEmail: { in: [originalEmail, pending.schoolEmail] },
+      },
+    });
+
+    await deleteShopifyCustomerById({
+      shop,
+      customerId: pending.loggedInCustomerId,
+    }).catch((error) => {
+      console.warn("Original Shopify customer cleanup by id failed", {
+        shop,
+        originalEmail,
+        schoolEmail: pending.schoolEmail,
+        customerId: pending.loggedInCustomerId,
+        error: String(error?.message || error),
+      });
+    });
+
+    await deleteShopifyCustomerByEmail({
+      shop,
+      email: originalEmail,
+    }).catch((error) => {
+      console.warn("Original Shopify customer cleanup by email failed", {
+        shop,
+        originalEmail,
+        schoolEmail: pending.schoolEmail,
+        error: String(error?.message || error),
+      });
+    });
+
+    await prisma.schoolEmailVerification.deleteMany({
+      where: {
+        accountEmail,
+        schoolEmail: originalEmail,
+      },
+    });
+  }
+
+  await prisma.pendingNativeProfile.delete({ where: { id: pending.id } });
+
+  return {
+    accountEmail,
+    schoolEmail: pending.schoolEmail,
+    returnTo: pending.returnTo || "/",
+  };
+}
+
 export async function loader({ request }) {
   const userId = await getUserId(request);
   const pathPrefix = withPathPrefix(request, "").replace(/\/$/, "");
@@ -545,103 +650,60 @@ export async function action({ request }) {
         }, { status: 403 });
       }
 
-      const pendingInstitute = getInstituteByKey(pending.instituteKey);
-      if (!pendingInstitute) {
-        await prisma.pendingNativeProfile.delete({ where: { id: pending.id } }).catch(() => null);
-        return json({ ok: false, errors: { ...errors, institute: "Selected institute is no longer available." } }, { status: 400 });
+      let completed;
+      try {
+        completed = await completePendingNativeProfile({
+          pending,
+          shop,
+          schoolCustomerId: loggedInCustomerId,
+        });
+      } catch (error) {
+        return json({ ok: false, errors: { ...errors, general: String(error?.message || error) } }, { status: 400 });
       }
-
-      const originalEmail = pending.originalEmail || pending.schoolEmail;
-      const accountEmail = pending.schoolEmail;
-      await savePortalProfile({
-        shop,
-        email: accountEmail,
-        schoolEmail: pending.schoolEmail,
-        fullName: pending.fullName,
-        institute: pendingInstitute,
-        role: pending.role,
-        roleOther: pending.roleOther || "",
-        phoneSa: pending.phoneSa || "",
-        passwordHash: pending.passwordHash,
-      });
-
-      await prisma.schoolEmailVerification.upsert({
-        where: {
-          shop_accountEmail_schoolEmail: {
-            shop,
-            accountEmail,
-            schoolEmail: pending.schoolEmail,
-          },
-        },
-        update: {
-          accountCustomerId: pending.loggedInCustomerId || null,
-          schoolCustomerId: loggedInCustomerId || null,
-          verifiedAt: new Date(),
-        },
-        create: {
-          shop,
-          accountEmail,
-          schoolEmail: pending.schoolEmail,
-          accountCustomerId: pending.loggedInCustomerId || null,
-          schoolCustomerId: loggedInCustomerId || null,
-          verifiedAt: new Date(),
-        },
-      });
-
-      if (originalEmail && originalEmail !== pending.schoolEmail) {
-        await prisma.portalUser.deleteMany({
-          where: {
-            OR: [{ email: originalEmail }, { schoolEmail: originalEmail }],
-          },
-        });
-
-        await prisma.profilePromptState.deleteMany({
-          where: {
-            shop,
-            customerEmail: { in: [originalEmail, pending.schoolEmail] },
-          },
-        });
-
-        await deleteShopifyCustomerById({
-          shop,
-          customerId: pending.loggedInCustomerId,
-        }).catch((error) => {
-          console.warn("Original Shopify customer cleanup by id failed", {
-            shop,
-            originalEmail,
-            schoolEmail: pending.schoolEmail,
-            customerId: pending.loggedInCustomerId,
-            error: String(error?.message || error),
-          });
-        });
-
-        await deleteShopifyCustomerByEmail({
-          shop,
-          email: originalEmail,
-        }).catch((error) => {
-          console.warn("Original Shopify customer cleanup by email failed", {
-            shop,
-            originalEmail,
-            schoolEmail: pending.schoolEmail,
-            error: String(error?.message || error),
-          });
-        });
-
-        await prisma.schoolEmailVerification.deleteMany({
-          where: {
-            accountEmail,
-            schoolEmail: originalEmail,
-          },
-        });
-      }
-
-      await prisma.pendingNativeProfile.delete({ where: { id: pending.id } });
 
       return json({
         ok: true,
-        linkedAccountEmail: accountEmail,
-        verifiedSchoolEmail: pending.schoolEmail,
-        redirectUrl: pending.returnTo || "/",
+        linkedAccountEmail: completed.accountEmail,
+        verifiedSchoolEmail: completed.schoolEmail,
+        redirectUrl: completed.returnTo,
+      });
+    }
+
+    if (intent === "finalize-current-school-profile") {
+      if (!rawEmail) {
+        return json({ ok: false, errors: { ...errors, email: "Missing verified Shopify email." } }, { status: 400 });
+      }
+
+      const pending = await prisma.pendingNativeProfile.findFirst({
+        where: {
+          shop,
+          schoolEmail: rawEmail,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!pending) {
+        return json({ ok: true, finalized: false, message: "No pending verified profile found." });
+      }
+
+      let completed;
+      try {
+        completed = await completePendingNativeProfile({
+          pending,
+          shop,
+          schoolCustomerId: loggedInCustomerId,
+        });
+      } catch (error) {
+        return json({ ok: false, errors: { ...errors, general: String(error?.message || error) } }, { status: 400 });
+      }
+
+      return json({
+        ok: true,
+        finalized: true,
+        linkedAccountEmail: completed.accountEmail,
+        verifiedSchoolEmail: completed.schoolEmail,
+        redirectUrl: completed.returnTo,
       });
     }
 

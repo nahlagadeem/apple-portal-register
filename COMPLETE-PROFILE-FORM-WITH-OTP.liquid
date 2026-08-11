@@ -485,6 +485,41 @@
       }
     }
 
+    async function finalizeCurrentSchoolProfile() {
+      if (!accountEmailEl) return;
+      const parts = getEmailParts(accountEmailEl.value);
+      if (!parts || !instituteByDomain[parts.domain]) return;
+
+      setStatus('Finishing verified profile...', 'success');
+      submitBtn.disabled = true;
+      if (skipBtn) skipBtn.disabled = true;
+
+      try {
+        const formData = new FormData();
+        formData.append('intent', 'finalize-current-school-profile');
+        formData.append('email', accountEmailEl.value);
+        formData.append('shop', '{{ shop.permanent_domain }}');
+        formData.append('logged_in_customer_id', '{{ customer.id }}');
+        formData.append('resume_path', '{{ request.path }}');
+
+        const data = await postForm(formData);
+        if (data.finalized && data.redirectUrl) {
+          window.location.replace(data.redirectUrl);
+          return;
+        }
+        if (data.finalized) {
+          setStatus('Profile completed.', 'success');
+        } else {
+          setStatus('', '');
+        }
+      } catch (error) {
+        setStatus(error.message || 'Could not finish profile.', 'error');
+      } finally {
+        submitBtn.disabled = false;
+        if (skipBtn) skipBtn.disabled = false;
+      }
+    }
+
     role.addEventListener('change', toggleRoleOther);
     institute.addEventListener('change', function () {
       updateEmailDomain();
@@ -506,6 +541,8 @@
     const pendingToken = new URLSearchParams(window.location.search).get('pending_profile_token');
     if (pendingToken && accountEmailEl) {
       finalizePendingProfile(pendingToken);
+    } else if (accountEmailEl) {
+      finalizeCurrentSchoolProfile();
     }
 
     form.addEventListener('submit', async function (e) {
