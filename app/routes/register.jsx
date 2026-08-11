@@ -318,6 +318,29 @@ async function updateShopifyCustomerAccess({
   return customer.id;
 }
 
+async function deleteShopifyCustomerById({ shop, customerId }) {
+  const normalizedId = normalizeCustomerId(customerId);
+  if (!shop || !normalizedId) return null;
+
+  const admin = await getAdminForShop(shop);
+  const deleted = await shopifyGraphql(
+    admin,
+    `
+      mutation DeleteCustomer($id: ID!) {
+        customerDelete(input: { id: $id }) {
+          deletedCustomerId
+          userErrors { field message }
+        }
+      }
+    `,
+    { id: `gid://shopify/Customer/${normalizedId}` }
+  );
+
+  const userErrors = deleted?.data?.customerDelete?.userErrors || [];
+  if (userErrors.length) throw new Error(userErrors.map((x) => x.message).join(", "));
+  return deleted?.data?.customerDelete?.deletedCustomerId || null;
+}
+
 async function savePortalProfile({
   shop,
   email,
@@ -523,6 +546,32 @@ export async function action({ request }) {
           verifiedAt: new Date(),
         },
       });
+
+      if (accountEmail !== pending.schoolEmail) {
+        await prisma.portalUser.deleteMany({
+          where: { email: pending.schoolEmail },
+        });
+
+        await prisma.profilePromptState.deleteMany({
+          where: {
+            shop,
+            customerEmail: { in: [accountEmail, pending.schoolEmail] },
+          },
+        });
+
+        await deleteShopifyCustomerById({
+          shop,
+          customerId: loggedInCustomerId,
+        }).catch((error) => {
+          console.warn("Temporary school-email Shopify customer cleanup failed", {
+            shop,
+            accountEmail,
+            schoolEmail: pending.schoolEmail,
+            customerId: loggedInCustomerId,
+            error: String(error?.message || error),
+          });
+        });
+      }
 
       await prisma.pendingNativeProfile.delete({ where: { id: pending.id } });
 
