@@ -389,46 +389,8 @@
       if (errors && errors.general) setStatus(errors.general, 'error');
     }
 
-    function decodeReactRouterPayload(table, value) {
-      if (Array.isArray(value)) {
-        return value.map(function (item) {
-          return decodeReactRouterPayload(table, item);
-        });
-      }
-
-      if (value && typeof value === 'object') {
-        const decoded = {};
-        Object.keys(value).forEach(function (key) {
-          const keyMatch = key.match(/^_(\d+)$/);
-          const keyName = keyMatch ? table[Number(keyMatch[1])] : key;
-          const rawValue = value[key];
-          if (typeof rawValue === 'number' && rawValue < 0) return;
-          decoded[keyName] = decodeReactRouterPayload(table, table[rawValue]);
-        });
-        return decoded;
-      }
-
-      return value;
-    }
-
-    function parseReactRouterDocument(html) {
-      const marker = 'window.__reactRouterContext.streamController.enqueue(';
-      const start = html.indexOf(marker);
-      if (start === -1) return null;
-
-      const valueStart = start + marker.length;
-      const valueEnd = html.indexOf(');<\/script>', valueStart);
-      if (valueEnd === -1) return null;
-
-      const encodedPayload = html.slice(valueStart, valueEnd);
-      const payloadText = JSON.parse(encodedPayload);
-      const table = JSON.parse(payloadText);
-      const decoded = decodeReactRouterPayload(table, table[0]);
-      return decoded && decoded.actionData && decoded.actionData['routes/register'];
-    }
-
     async function postForm(formData) {
-      const res = await fetch('/apps/student-register/register?response=json' + window.location.search.replace('?', '&'), {
+      const res = await fetch('/apps/student-register/register-json?response=json' + window.location.search.replace('?', '&'), {
         method: 'POST',
         body: formData,
         headers: {
@@ -437,12 +399,11 @@
         }
       });
 
-      const bodyText = await res.text();
       let data = null;
       try {
-        data = JSON.parse(bodyText);
+        data = await res.json();
       } catch (_) {
-        data = parseReactRouterDocument(bodyText);
+        data = null;
       }
 
       if (!res.ok || !data) {
