@@ -145,6 +145,8 @@
           >
             <input type="hidden" name="intent" value="register">
             <input type="hidden" name="resume_path" value="{{ request.path }}">
+            <input type="hidden" name="shop" value="{{ shop.permanent_domain }}">
+            <input type="hidden" name="return_to" value="/">
 
             <div id="registerStatus" class="student-register__status" aria-live="polite"></div>
 
@@ -377,6 +379,11 @@
         return false;
       }
 
+      if (value.charAt(0) === '.' || value.charAt(value.length - 1) === '.' || value.indexOf('..') !== -1) {
+        setFieldError('email', 'Do not start or end with a dot, or use two dots together.');
+        return false;
+      }
+
       setFieldError('email', '');
       return true;
     }
@@ -406,7 +413,7 @@
         data = null;
       }
 
-      if (!res.ok || !data) {
+      if (!res.ok || !data || data.ok === false) {
         const errors = data && data.errors ? data.errors : {};
         applyServerErrors(errors);
         throw new Error((errors && (errors.general || errors.email)) || 'Could not save right now.');
