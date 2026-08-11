@@ -433,6 +433,10 @@
       if (errors && errors.general) setStatus(errors.general, 'error');
     }
 
+    function redirectAfterProfileComplete(redirectUrl) {
+      window.location.replace(redirectUrl || 'https://{{ shop.permanent_domain }}/');
+    }
+
     async function postForm(formData) {
       const res = await fetch('/apps/student-register/register-json?response=json' + window.location.search.replace('?', '&'), {
         method: 'POST',
@@ -477,11 +481,11 @@
 
         const data = await postForm(formData);
         if (data.redirectUrl) {
-          window.location.replace(data.redirectUrl);
+          redirectAfterProfileComplete(data.redirectUrl);
           return;
         }
 
-        setStatus('Profile completed.', 'success');
+        redirectAfterProfileComplete('');
       } catch (error) {
         setStatus(error.message || 'Could not finish profile.', 'error');
       } finally {
@@ -509,11 +513,11 @@
 
         const data = await postForm(formData);
         if (data.finalized && data.redirectUrl) {
-          window.location.replace(data.redirectUrl);
+          redirectAfterProfileComplete(data.redirectUrl);
           return;
         }
         if (data.finalized) {
-          setStatus('Profile completed.', 'success');
+          redirectAfterProfileComplete('');
         } else {
           setStatus('', '');
         }

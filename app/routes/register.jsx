@@ -107,9 +107,16 @@ function buildShopifyLoginRedirect(resumePath, loginHint = "") {
   if (loginHint) {
     loginParams.set("login_hint", loginHint);
     loginParams.set("email", loginHint);
+    loginParams.set("customer[email]", loginHint);
+    loginParams.set("checkout[email]", loginHint);
   }
   const loginPath = `/account/login?${loginParams.toString()}`;
-  return `/account/logout?return_url=${encodeURIComponent(loginPath)}`;
+  const logoutParams = new URLSearchParams({ return_url: loginPath });
+  if (loginHint) {
+    logoutParams.set("login_hint", loginHint);
+    logoutParams.set("email", loginHint);
+  }
+  return `/account/logout?${logoutParams.toString()}`;
 }
 
 function getStorefrontContext(request, formData) {
