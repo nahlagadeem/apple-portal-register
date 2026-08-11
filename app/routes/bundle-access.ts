@@ -118,7 +118,7 @@ async function ensureCustomerAccessTags(shop: string, customerEmail: string, cus
   if (!access.allowed) return;
 
   tags.add("bundle_access_all-bundles");
-  tags.add("institute_bisr");
+  if (access.instituteKey) tags.add(`institute_${access.instituteKey}`);
 
   const updateResponse = await admin.graphql(
     `
@@ -193,10 +193,20 @@ async function handle(request: Request) {
     return json({ ok: false, allowed: false, error: "Missing customer email." }, { status: 401 });
   }
 
-  const access = getBundleCollectionAccessForEmail(customerEmail, collectionHandle);
+  const verification = shop
+    ? await prisma.schoolEmailVerification.findFirst({
+        where: {
+          shop,
+          accountEmail: customerEmail,
+        },
+        orderBy: { verifiedAt: "desc" },
+      }).catch(() => null)
+    : null;
+  const eligibilityEmail = normalizeCustomerEmail(verification?.schoolEmail) || customerEmail;
+  const access = getBundleCollectionAccessForEmail(eligibilityEmail, collectionHandle);
   if (access.allowed && shop && loggedInCustomerId) {
     try {
-      await ensureCustomerAccessTags(shop, customerEmail, loggedInCustomerId);
+      await ensureCustomerAccessTags(shop, eligibilityEmail, loggedInCustomerId);
     } catch {
       // Tag sync is best effort; authorization still comes from the signed request and domain check.
     }
@@ -206,6 +216,8 @@ async function handle(request: Request) {
     shop,
     proxyVerified,
     customerEmail,
+    eligibilityEmail,
+    schoolEmailVerified: Boolean(verification),
     ...access,
   });
 }

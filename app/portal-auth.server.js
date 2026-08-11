@@ -215,4 +215,39 @@ export async function ensurePortalUserTable() {
     CREATE UNIQUE INDEX IF NOT EXISTS "PendingNativeProfile_token_key"
     ON "PendingNativeProfile"("token");
   `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "SchoolEmailVerification" (
+      "id" SERIAL NOT NULL,
+      "shop" TEXT NOT NULL,
+      "accountEmail" TEXT NOT NULL,
+      "schoolEmail" TEXT NOT NULL,
+      "accountCustomerId" TEXT,
+      "schoolCustomerId" TEXT,
+      "verifiedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "SchoolEmailVerification_pkey" PRIMARY KEY ("id")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "shop" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "accountEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "schoolEmail" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "accountCustomerId" TEXT`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "schoolCustomerId" TEXT`);
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "verifiedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+  await prisma.$executeRawUnsafe(
+    `ALTER TABLE "SchoolEmailVerification" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  );
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "SchoolEmailVerification_shop_accountEmail_schoolEmail_key"
+    ON "SchoolEmailVerification"("shop", "accountEmail", "schoolEmail");
+  `);
 }

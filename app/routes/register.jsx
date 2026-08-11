@@ -5,6 +5,7 @@ import prisma from "../db.server";
 import {
   buildInstituteEmail,
   buildInstituteOptions,
+  getInstituteByLabel,
   getInstituteByKey,
   getInstituteCustomerTags,
   normalizeEmailLocalPart,
@@ -100,8 +101,10 @@ function generatePendingProfileToken() {
   return crypto.randomBytes(24).toString("hex");
 }
 
-function buildShopifyLoginRedirect(resumePath) {
-  const loginPath = `/account/login?return_url=${encodeURIComponent(resumePath)}`;
+function buildShopifyLoginRedirect(resumePath, loginHint = "") {
+  const loginPath = `/account/login?return_url=${encodeURIComponent(resumePath)}${
+    loginHint ? `&login_hint=${encodeURIComponent(loginHint)}` : ""
+  }`;
   return `/account/logout?return_url=${encodeURIComponent(loginPath)}`;
 }
 
@@ -227,6 +230,8 @@ async function ensureShopifyCustomer({
       }
     }
   `;
+  const instituteForTags =
+    typeof institute === "string" ? getInstituteByLabel(institute) : institute;
 
   const created = await shopifyGraphql(admin, createCustomerMutation, {
     input: {
@@ -234,7 +239,7 @@ async function ensureShopifyCustomer({
       firstName,
       lastName: lastName || undefined,
       phone: phoneSa || undefined,
-      tags: getInstituteCustomerTags(institute.key),
+      tags: getInstituteCustomerTags(instituteForTags?.key || ""),
       note: noteLines.join("\n"),
     },
   });
@@ -246,6 +251,71 @@ async function ensureShopifyCustomer({
   }
 
   return created?.data?.customerCreate?.customer?.id || null;
+}
+
+async function updateShopifyCustomerAccess({
+  shop,
+  email,
+  fullName,
+  phoneSa,
+  institute,
+  role,
+  roleOther,
+}) {
+  const admin = await getAdminForShop(shop);
+  const found = await shopifyGraphql(
+    admin,
+    `
+      query FindCustomerByEmail($q: String!) {
+        customers(first: 1, query: $q) {
+          edges {
+            node { id email tags }
+          }
+        }
+      }
+    `,
+    { q: `email:${email}` }
+  );
+
+  const customer = found?.data?.customers?.edges?.[0]?.node;
+  if (!customer?.id) return null;
+
+  const { firstName, lastName } = splitName(fullName);
+  const tags = new Set(Array.isArray(customer.tags) ? customer.tags : []);
+  for (const tag of getInstituteCustomerTags(institute.key)) tags.add(tag);
+
+  const noteLines = [
+    `Registered via student portal`,
+    `Institute: ${institute.label}`,
+    `Role: ${role}${role === "other" && roleOther ? ` (${roleOther})` : ""}`,
+    `Verified school email: ${email}`,
+  ];
+
+  const updated = await shopifyGraphql(
+    admin,
+    `
+      mutation CustomerUpdate($input: CustomerInput!) {
+        customerUpdate(input: $input) {
+          customer { id }
+          userErrors { field message }
+        }
+      }
+    `,
+    {
+      input: {
+        id: customer.id,
+        firstName,
+        lastName: lastName || undefined,
+        phone: phoneSa || undefined,
+        tags: Array.from(tags),
+        note: noteLines.join("\n"),
+      },
+    }
+  );
+
+  const userErrors = updated?.data?.customerUpdate?.userErrors || [];
+  if (userErrors.length) throw new Error(userErrors.map((x) => x.message).join(", "));
+  return customer.id;
 }
 
 async function savePortalProfile({
@@ -294,7 +364,7 @@ async function savePortalProfile({
     },
   });
 
-  await ensureShopifyCustomer({
+  await updateShopifyCustomerAccess({
     shop,
     email,
     fullName,
@@ -303,7 +373,7 @@ async function savePortalProfile({
     role,
     roleOther,
   }).catch((error) => {
-    console.warn("Shopify customer sync failed after native profile completion", {
+    console.warn("Shopify customer access sync failed after native profile completion", {
       shop,
       email,
       error: String(error?.message || error),
@@ -404,7 +474,7 @@ export async function action({ request }) {
         return json({
           ok: false,
           requiresShopifyLogin: true,
-          redirectUrl: buildShopifyLoginRedirect(resumePath),
+          redirectUrl: buildShopifyLoginRedirect(resumePath, pending.schoolEmail),
           errors: {
             ...errors,
             email: `Shopify verified ${rawEmail || "another email"}. Sign in with ${pending.schoolEmail} to finish.`,
@@ -418,9 +488,10 @@ export async function action({ request }) {
         return json({ ok: false, errors: { ...errors, institute: "Selected institute is no longer available." } }, { status: 400 });
       }
 
+      const accountEmail = pending.originalEmail || pending.schoolEmail;
       await savePortalProfile({
         shop,
-        email: pending.schoolEmail,
+        email: accountEmail,
         schoolEmail: pending.schoolEmail,
         fullName: pending.fullName,
         institute: pendingInstitute,
@@ -430,11 +501,39 @@ export async function action({ request }) {
         passwordHash: pending.passwordHash,
       });
 
+      await prisma.schoolEmailVerification.upsert({
+        where: {
+          shop_accountEmail_schoolEmail: {
+            shop,
+            accountEmail,
+            schoolEmail: pending.schoolEmail,
+          },
+        },
+        update: {
+          accountCustomerId: pending.loggedInCustomerId || null,
+          schoolCustomerId: loggedInCustomerId || null,
+          verifiedAt: new Date(),
+        },
+        create: {
+          shop,
+          accountEmail,
+          schoolEmail: pending.schoolEmail,
+          accountCustomerId: pending.loggedInCustomerId || null,
+          schoolCustomerId: loggedInCustomerId || null,
+          verifiedAt: new Date(),
+        },
+      });
+
       await prisma.pendingNativeProfile.delete({ where: { id: pending.id } });
 
       return json({
         ok: true,
-        redirectUrl: pending.returnTo || "/",
+        linkedAccountEmail: accountEmail,
+        verifiedSchoolEmail: pending.schoolEmail,
+        redirectUrl:
+          accountEmail && accountEmail !== pending.schoolEmail
+            ? buildShopifyLoginRedirect(pending.returnTo || "/", accountEmail)
+            : pending.returnTo || "/",
       });
     }
 
@@ -514,7 +613,7 @@ export async function action({ request }) {
       const token = generatePendingProfileToken();
       const resumeBase = normalizeResumePath(formData.get("resume_path"));
       const resumePath = `${resumeBase}${resumeBase.includes("?") ? "&" : "?"}pending_profile_token=${encodeURIComponent(token)}`;
-      const redirectUrl = buildShopifyLoginRedirect(resumePath);
+      const redirectUrl = buildShopifyLoginRedirect(resumePath, schoolEmail);
 
       await prisma.pendingNativeProfile.create({
         data: {

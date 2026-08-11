@@ -196,6 +196,10 @@ function sortAddressesWithDefaultFirst(addresses: ShopifyAddress[], defaultAddre
   });
 }
 
+function getEligibilityEmail(user: Pick<PortalUserRecord, "email" | "schoolEmail">) {
+  return user.schoolEmail || user.email;
+}
+
 async function getShopifyCustomerById(admin: any, loggedInCustomerId: string) {
   const customerGid = `gid://shopify/Customer/${loggedInCustomerId}`;
   const customerResp = await shopifyGraphql(
@@ -599,6 +603,7 @@ export async function loader({ request }: { request: Request }) {
   }
 
   const { user, defaultAddress, addresses } = resolved;
+  const eligibilityEmail = getEligibilityEmail(user);
   const promptState = await getProfilePromptState(
     resolved.shop,
     user.email,
@@ -609,7 +614,7 @@ export async function loader({ request }: { request: Request }) {
     hasPortalProfile: true,
     skippedProfilePrompt: Boolean(promptState?.skippedAt),
     shouldPromptProfileCompletion: false,
-    bundleCollectionAccess: getBundleCollectionAccessForEmail(user.email),
+    bundleCollectionAccess: getBundleCollectionAccessForEmail(eligibilityEmail),
     user: {
       id: user.id,
       fullName: user.fullName,
@@ -709,7 +714,7 @@ export async function action({ request }: { request: Request }) {
       ok: true,
       section: "profile",
       message: "Profile updated.",
-      bundleCollectionAccess: getBundleCollectionAccessForEmail(user.email),
+      bundleCollectionAccess: getBundleCollectionAccessForEmail(getEligibilityEmail(user)),
     });
   }
 
