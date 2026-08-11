@@ -715,6 +715,47 @@ export async function action({ request }) {
         return { ok: false, errors, pathPrefix };
       }
 
+      const pendingSkipProfile = await prisma.pendingNativeProfile.findFirst({
+        where: {
+          shop,
+          schoolEmail: skipEmail,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (pendingSkipProfile) {
+        let completed;
+        try {
+          completed = await completePendingNativeProfile({
+            pending: pendingSkipProfile,
+            shop,
+            schoolCustomerId: loggedInCustomerId,
+          });
+        } catch (error) {
+          if (jsonMode) {
+            return json(
+              { ok: false, errors: { ...errors, general: String(error?.message || error) } },
+              { status: 400 }
+            );
+          }
+          return { ok: false, errors: { ...errors, general: String(error?.message || error) }, pathPrefix };
+        }
+
+        if (jsonMode) {
+          return json({
+            ok: true,
+            skipped: false,
+            completedProfile: true,
+            linkedAccountEmail: completed.accountEmail,
+            verifiedSchoolEmail: completed.schoolEmail,
+            redirectUrl: `https://${shop}${completed.returnTo || returnTo || "/"}`,
+          });
+        }
+
+        return redirect(completed.returnTo || returnTo || "/");
+      }
+
       const skipInstitute = getInstituteByEmail(skipEmail);
       if (skipInstitute) {
         await savePortalProfile({
