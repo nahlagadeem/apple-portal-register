@@ -287,6 +287,7 @@
     const form = document.getElementById('StudentRegisterForm');
     if (!form) return;
 
+    const fullName = form.querySelector('#fullName');
     const institute = form.querySelector('#institute');
     const emailLocalPart = form.querySelector('#emailLocalPart');
     const emailDomain = form.querySelector('#emailDomain');
@@ -391,6 +392,10 @@
 
       if (!emailLocalPart.value.trim()) {
         emailLocalPart.value = parts.localPart;
+      }
+
+      if (fullName && !fullName.value.trim()) {
+        fullName.value = accountEmailEl.value;
       }
     }
 

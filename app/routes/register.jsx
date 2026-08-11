@@ -103,9 +103,12 @@ function generatePendingProfileToken() {
 }
 
 function buildShopifyLoginRedirect(resumePath, loginHint = "") {
-  const loginPath = `/account/login?return_url=${encodeURIComponent(resumePath)}${
-    loginHint ? `&login_hint=${encodeURIComponent(loginHint)}` : ""
-  }`;
+  const loginParams = new URLSearchParams({ return_url: resumePath });
+  if (loginHint) {
+    loginParams.set("login_hint", loginHint);
+    loginParams.set("email", loginHint);
+  }
+  const loginPath = `/account/login?${loginParams.toString()}`;
   return `/account/logout?return_url=${encodeURIComponent(loginPath)}`;
 }
 
