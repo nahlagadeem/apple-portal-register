@@ -39,6 +39,24 @@ export const action = async ({ request }) => {
         },
       })
     );
+
+    deletes.push(
+      db.schoolEmailVerification.deleteMany({
+        where: {
+          shop,
+          OR: [{ accountEmail: email }, { schoolEmail: email }],
+        },
+      })
+    );
+
+    deletes.push(
+      db.pendingNativeProfile.deleteMany({
+        where: {
+          shop,
+          OR: [{ originalEmail: email }, { schoolEmail: email }],
+        },
+      })
+    );
   }
 
   const promptStateOr = [
@@ -52,6 +70,29 @@ export const action = async ({ request }) => {
         where: {
           shop,
           OR: promptStateOr,
+        },
+      })
+    );
+  }
+
+  if (customerIds.length) {
+    deletes.push(
+      db.schoolEmailVerification.deleteMany({
+        where: {
+          shop,
+          OR: [
+            { accountCustomerId: { in: customerIds } },
+            { schoolCustomerId: { in: customerIds } },
+          ],
+        },
+      })
+    );
+
+    deletes.push(
+      db.pendingNativeProfile.deleteMany({
+        where: {
+          shop,
+          loggedInCustomerId: { in: customerIds },
         },
       })
     );
