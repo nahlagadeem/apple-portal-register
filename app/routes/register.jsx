@@ -92,6 +92,23 @@ function wantsJson(request) {
   return forceJson || accept.includes("application/json") || requestedWith === "xmlhttprequest";
 }
 
+async function isSchoolEmailOtpEnabled(shop) {
+  if (!shop) return true;
+  try {
+    const setting = await prisma.appSetting.findUnique({
+      where: { shop },
+      select: { schoolEmailOtpEnabled: true },
+    });
+    return setting?.schoolEmailOtpEnabled ?? true;
+  } catch (error) {
+    console.warn("Could not read app OTP setting; defaulting enabled", {
+      shop,
+      error: String(error?.message || error),
+    });
+    return true;
+  }
+}
+
 function getPortalPasswordHash(password, existingUser) {
   if (password) return hashPassword(password);
   if (existingUser?.passwordHash) return existingUser.passwordHash;
@@ -630,6 +647,7 @@ export async function action({ request }) {
       if (jsonMode) return json({ ok: false, errors }, { status: 400 });
       return { ok: false, errors, pathPrefix };
     }
+    const schoolEmailOtpEnabled = await isSchoolEmailOtpEnabled(shop);
 
     if (intent === "finalize-native-profile") {
       const token = String(formData.get("pending_profile_token") || "").trim();
@@ -879,7 +897,7 @@ export async function action({ request }) {
       return { ok: false, errors, pathPrefix, values };
     }
 
-    if (intent === "complete-native-profile" && rawEmail !== schoolEmail) {
+    if (schoolEmailOtpEnabled && intent === "complete-native-profile" && rawEmail !== schoolEmail) {
       const token = generatePendingProfileToken();
       const resumeBase = normalizeResumePath(formData.get("resume_path"));
       const resumePath = `${resumeBase}${resumeBase.includes("?") ? "&" : "?"}pending_profile_token=${encodeURIComponent(token)}`;
@@ -969,6 +987,31 @@ export async function action({ request }) {
         customerEmail: intent === "complete-native-profile" ? portalEmail : schoolEmail,
       },
     });
+
+    if (!schoolEmailOtpEnabled && intent === "complete-native-profile" && schoolEmail) {
+      await prisma.schoolEmailVerification.upsert({
+        where: {
+          shop_accountEmail_schoolEmail: {
+            shop,
+            accountEmail: portalEmail,
+            schoolEmail,
+          },
+        },
+        update: {
+          accountCustomerId: loggedInCustomerId || null,
+          schoolCustomerId: loggedInCustomerId || null,
+          verifiedAt: new Date(),
+        },
+        create: {
+          shop,
+          accountEmail: portalEmail,
+          schoolEmail,
+          accountCustomerId: loggedInCustomerId || null,
+          schoolCustomerId: loggedInCustomerId || null,
+          verifiedAt: new Date(),
+        },
+      });
+    }
 
     if (intent === "complete-native-profile") {
       await ensureShopifyCustomer({

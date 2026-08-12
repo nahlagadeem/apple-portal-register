@@ -91,3 +91,11 @@ model SchoolEmailVerification {
 
   @@unique([shop, accountEmail, schoolEmail])
 }
+
+model AppSetting {
+  id                    Int      @id @default(autoincrement())
+  shop                  String   @unique
+  schoolEmailOtpEnabled Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
