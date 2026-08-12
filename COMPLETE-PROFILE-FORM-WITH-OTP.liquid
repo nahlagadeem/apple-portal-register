@@ -59,6 +59,7 @@
                   <option value="mu">Majmaa University</option>
                   <option value="ksu">King Saud University</option>
                   <option value="kfupm">King Fahd University of Petroleum and Minerals</option>
+                  <option value="kfu">King Faisal University</option>
                 </optgroup>
               </select>
               <small class="student-register__error" data-error-for="institute"></small>
@@ -185,6 +186,7 @@
                   <option value="mu">Majmaa University</option>
                   <option value="ksu">King Saud University</option>
                   <option value="kfupm">King Fahd University of Petroleum and Minerals</option>
+                  <option value="kfu">King Faisal University</option>
                 </optgroup>
               </select>
               <small class="student-register__error" data-error-for="institute"></small>
@@ -320,7 +322,8 @@
       'kaust': '@kaust.edu.sa',
       'mu': '@mu.edu.sa',
       'ksu': '@ksu.edu.sa',
-      'kfupm': '@kfupm.edu.sa'
+      'kfupm': '@kfupm.edu.sa',
+      'kfu': '@kfu.edu.sa'
     };
     const instituteByDomain = Object.keys(instituteDomains).reduce(function (lookup, key) {
       lookup[instituteDomains[key].toLowerCase()] = key;

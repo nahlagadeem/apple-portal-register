@@ -31,6 +31,7 @@ export const INSTITUTES = [
   { key: "mu", segment: "Hi-Edu / Uni", label: "Majmaa University", domain: "@mu.edu.sa" },
   { key: "ksu", segment: "Hi-Edu / Uni", label: "King Saud University", domain: "@ksu.edu.sa" },
   { key: "kfupm", segment: "Hi-Edu / Uni", label: "King Fahd University of Petroleum and Minerals", domain: "@kfupm.edu.sa" },
+  { key: "kfu", segment: "Hi-Edu / Uni", label: "King Faisal University", domain: "@kfu.edu.sa" },
 ];
 
 const INSTITUTE_BY_KEY = new Map(INSTITUTES.map((institute) => [institute.key, institute]));
