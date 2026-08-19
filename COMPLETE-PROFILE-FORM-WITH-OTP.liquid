@@ -484,14 +484,6 @@
 
         const data = await postForm(formData);
         if (data.redirectUrl) {
-          if (data.requiresShopifyLogin) {
-            setStatus(data.message || 'Please confirm your school email to complete your profile.', 'success');
-            setTimeout(function () {
-              window.location.replace(data.redirectUrl);
-            }, 1200);
-            return;
-          }
-
           redirectAfterProfileComplete(data.redirectUrl);
           return;
         }
