@@ -586,7 +586,7 @@
       }
 
       setStatus(accountEmailEl && accountEmailEl.value.toLowerCase() !== getSchoolEmail()
-        ? 'We will send an OTP to ' + getSchoolEmail() + '. Use the same email if Shopify asks for it again.'
+        ? 'We will send a verification code to ' + getSchoolEmail() + '.'
         : 'Saving...', 'success');
       submitBtn.disabled = true;
       if (skipBtn) skipBtn.disabled = true;
@@ -594,7 +594,7 @@
       try {
         const data = await postForm(new FormData(form));
         if (data.redirectUrl) {
-          setStatus(data.message || ('Enter the OTP sent to ' + getSchoolEmail() + '. If Shopify asks for an email, use ' + getSchoolEmail() + '.'), 'success');
+          setStatus(data.message || ('Enter the verification code sent to ' + getSchoolEmail() + ' to complete your profile.'), 'success');
           setTimeout(function () {
             window.location.replace(data.redirectUrl);
           }, 1200);

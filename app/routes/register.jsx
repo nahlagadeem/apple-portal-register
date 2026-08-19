@@ -930,7 +930,7 @@ export async function action({ request }) {
           requiresShopifyLogin: true,
           schoolEmail,
           redirectUrl,
-          message: `We are sending you to Shopify verification. Enter the OTP sent to ${schoolEmail}. If Shopify shows an email field, keep this same email: ${schoolEmail}.`,
+          message: `We are sending a verification code to ${schoolEmail}. Enter the code sent to this email to complete your profile.`,
         });
       }
 
