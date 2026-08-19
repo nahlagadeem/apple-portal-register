@@ -180,6 +180,80 @@ function splitName(fullName) {
   };
 }
 
+const CUSTOMER_PROFILE_NAMESPACE = "student_portal";
+const CUSTOMER_PROFILE_KEYS = {
+  fullName: "portal_full_name",
+  instituteName: "portal_institute_name",
+  emailDomain: "portal_email_domain",
+  role: "portal_role",
+  phoneNumber: "portal_phone_number",
+};
+
+function buildPortalRoleLabel(role, roleOther) {
+  const normalizedRole = String(role || "").trim();
+  const normalizedRoleOther = String(roleOther || "").trim();
+  if (!normalizedRoleOther) return normalizedRole;
+  if (!normalizedRole || normalizedRole.toLowerCase() === "other") return normalizedRoleOther;
+  return `${normalizedRole}: ${normalizedRoleOther}`;
+}
+
+async function setCustomerPortalProfileMetafields({
+  shop,
+  customerId,
+  fullName,
+  institute,
+  role,
+  roleOther,
+  phoneSa,
+}) {
+  const normalizedCustomerId = normalizeCustomerId(customerId);
+  if (!shop || !normalizedCustomerId) return null;
+
+  const admin = await getAdminForShop(shop);
+  const ownerId = `gid://shopify/Customer/${normalizedCustomerId}`;
+  const profile = {
+    fullName: String(fullName || "").trim(),
+    instituteName: String(institute?.label || institute || "").trim(),
+    emailDomain: String(institute?.domain || "").replace(/^@/, "").trim(),
+    role: buildPortalRoleLabel(role, roleOther),
+    phoneNumber: String(phoneSa || "").trim(),
+  };
+
+  const metafields = [
+    [CUSTOMER_PROFILE_KEYS.fullName, profile.fullName],
+    [CUSTOMER_PROFILE_KEYS.instituteName, profile.instituteName],
+    [CUSTOMER_PROFILE_KEYS.emailDomain, profile.emailDomain],
+    [CUSTOMER_PROFILE_KEYS.role, profile.role],
+    [CUSTOMER_PROFILE_KEYS.phoneNumber, profile.phoneNumber],
+  ]
+    .filter(([, value]) => String(value || "").trim())
+    .map(([key, value]) => ({
+      ownerId,
+      namespace: CUSTOMER_PROFILE_NAMESPACE,
+      key,
+      type: "single_line_text_field",
+      value,
+    }));
+
+  if (!metafields.length) return profile;
+
+  const updated = await shopifyGraphql(
+    admin,
+    `
+      mutation SetCustomerPortalProfileMetafields($metafields: [MetafieldsSetInput!]!) {
+        metafieldsSet(metafields: $metafields) {
+          userErrors { field message }
+        }
+      }
+    `,
+    { metafields }
+  );
+
+  const userErrors = updated?.data?.metafieldsSet?.userErrors || [];
+  if (userErrors.length) throw new Error(userErrors.map((x) => x.message).join(", "));
+  return profile;
+}
+
 async function getAdminForShop(shop) {
   try {
     const { admin } = await unauthenticated.admin(shop);
@@ -412,6 +486,27 @@ async function deleteShopifyCustomerByEmail({ shop, email }) {
   return deleted?.data?.customerDelete?.deletedCustomerId || null;
 }
 
+async function findShopifyCustomerIdByEmail({ shop, email }) {
+  if (!shop || !email) return null;
+
+  const admin = await getAdminForShop(shop);
+  const found = await shopifyGraphql(
+    admin,
+    `
+      query FindCustomerByEmail($q: String!) {
+        customers(first: 1, query: $q) {
+          edges {
+            node { id email }
+          }
+        }
+      }
+    `,
+    { q: `email:${email}` }
+  );
+
+  return found?.data?.customers?.edges?.[0]?.node?.id || null;
+}
+
 async function savePortalProfile({
   shop,
   email,
@@ -458,7 +553,7 @@ async function savePortalProfile({
     },
   });
 
-  await updateShopifyCustomerAccess({
+  const customerId = await updateShopifyCustomerAccess({
     shop,
     email,
     fullName,
@@ -470,6 +565,24 @@ async function savePortalProfile({
     console.warn("Shopify customer access sync failed after native profile completion", {
       shop,
       email,
+      error: String(error?.message || error),
+    });
+    return null;
+  });
+
+  await setCustomerPortalProfileMetafields({
+    shop,
+    customerId,
+    fullName,
+    institute,
+    role,
+    roleOther,
+    phoneSa,
+  }).catch((error) => {
+    console.warn("Shopify customer portal profile metafield sync failed", {
+      shop,
+      email,
+      customerId,
       error: String(error?.message || error),
     });
   });
@@ -501,6 +614,27 @@ async function completePendingNativeProfile({
     roleOther: pending.roleOther || "",
     phoneSa: pending.phoneSa || "",
     passwordHash: pending.passwordHash,
+  });
+
+  const schoolShopifyCustomerId =
+    (schoolCustomerId && `gid://shopify/Customer/${normalizeCustomerId(schoolCustomerId)}`) ||
+    (await findShopifyCustomerIdByEmail({ shop, email: pending.schoolEmail }).catch(() => null));
+
+  await setCustomerPortalProfileMetafields({
+    shop,
+    customerId: schoolShopifyCustomerId,
+    fullName: pending.fullName,
+    institute: pendingInstitute,
+    role: pending.role,
+    roleOther: pending.roleOther || "",
+    phoneSa: pending.phoneSa || "",
+  }).catch((error) => {
+    console.warn("Verified school Shopify customer portal profile metafield sync failed", {
+      shop,
+      schoolEmail: pending.schoolEmail,
+      customerId: schoolShopifyCustomerId,
+      error: String(error?.message || error),
+    });
   });
 
   await prisma.schoolEmailVerification.upsert({
