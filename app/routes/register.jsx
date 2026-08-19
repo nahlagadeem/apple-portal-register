@@ -119,7 +119,7 @@ function generatePendingProfileToken() {
   return crypto.randomBytes(24).toString("hex");
 }
 
-function buildShopifyLoginRedirect(resumePath, loginHint = "") {
+function buildShopifyLoginRedirect(resumePath, loginHint = "", options = {}) {
   const loginParams = new URLSearchParams({ return_to: resumePath });
   if (loginHint) {
     loginParams.set("login_hint", loginHint);
@@ -129,7 +129,15 @@ function buildShopifyLoginRedirect(resumePath, loginHint = "") {
     loginParams.set("customer_email", loginHint);
     loginParams.set("checkout[email]", loginHint);
   }
-  return `/customer_authentication/login?${loginParams.toString()}`;
+  const loginPath = `/customer_authentication/login?${loginParams.toString()}`;
+  if (!options.forceNewSession) return loginPath;
+
+  const logoutParams = new URLSearchParams({ return_url: loginPath });
+  if (loginHint) {
+    logoutParams.set("login_hint", loginHint);
+    logoutParams.set("email", loginHint);
+  }
+  return `/account/logout?${logoutParams.toString()}`;
 }
 
 function getStorefrontContext(request, formData) {
@@ -664,14 +672,14 @@ export async function action({ request }) {
         const resumeBase = normalizeResumePath(formData.get("resume_path"));
         const resumePath = `${resumeBase}${resumeBase.includes("?") ? "&" : "?"}pending_profile_token=${encodeURIComponent(token)}`;
         return json({
-          ok: false,
+          ok: true,
           requiresShopifyLogin: true,
-          redirectUrl: buildShopifyLoginRedirect(resumePath, pending.schoolEmail),
-          errors: {
-            ...errors,
-            email: `Shopify verified ${rawEmail || "another email"}. Sign in with ${pending.schoolEmail} to finish.`,
-          },
-        }, { status: 403 });
+          schoolEmail: pending.schoolEmail,
+          redirectUrl: buildShopifyLoginRedirect(resumePath, pending.schoolEmail, {
+            forceNewSession: true,
+          }),
+          message: `Please confirm this is your school email: ${pending.schoolEmail}. We will send a verification code to this address to complete your profile.`,
+        });
       }
 
       let completed;
