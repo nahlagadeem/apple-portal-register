@@ -124,7 +124,9 @@ function buildShopifyLoginRedirect(resumePath, loginHint = "") {
   if (loginHint) {
     loginParams.set("login_hint", loginHint);
     loginParams.set("email", loginHint);
+    loginParams.set("account_email", loginHint);
     loginParams.set("customer[email]", loginHint);
+    loginParams.set("customer_email", loginHint);
     loginParams.set("checkout[email]", loginHint);
   }
   const loginPath = `/account/login?${loginParams.toString()}`;
@@ -132,6 +134,7 @@ function buildShopifyLoginRedirect(resumePath, loginHint = "") {
   if (loginHint) {
     logoutParams.set("login_hint", loginHint);
     logoutParams.set("email", loginHint);
+    logoutParams.set("account_email", loginHint);
   }
   return `/account/logout?${logoutParams.toString()}`;
 }
@@ -927,7 +930,7 @@ export async function action({ request }) {
           requiresShopifyLogin: true,
           schoolEmail,
           redirectUrl,
-          message: `Verify ${schoolEmail} with Shopify login to finish your profile.`,
+          message: `We are sending you to Shopify verification. Enter the OTP sent to ${schoolEmail}. If Shopify shows an email field, keep this same email: ${schoolEmail}.`,
         });
       }
 
