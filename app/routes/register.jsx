@@ -507,6 +507,47 @@ async function findShopifyCustomerIdByEmail({ shop, email }) {
   return found?.data?.customers?.edges?.[0]?.node?.id || null;
 }
 
+async function cleanupOriginalShopifyCustomer({ shop, customerId, email, schoolEmail }) {
+  if (!shop || !email || email === schoolEmail) {
+    return { deletedById: null, deletedByEmail: null, remainingCustomerId: null };
+  }
+
+  let deletedById = null;
+  let deletedByEmail = null;
+  const errors = [];
+
+  try {
+    deletedById = await deleteShopifyCustomerById({ shop, customerId });
+  } catch (error) {
+    errors.push(`id cleanup: ${String(error?.message || error)}`);
+  }
+
+  try {
+    deletedByEmail = await deleteShopifyCustomerByEmail({ shop, email });
+  } catch (error) {
+    errors.push(`email cleanup: ${String(error?.message || error)}`);
+  }
+
+  const remainingCustomerId = await findShopifyCustomerIdByEmail({ shop, email }).catch((error) => {
+    errors.push(`verification: ${String(error?.message || error)}`);
+    return null;
+  });
+
+  if (remainingCustomerId) {
+    throw new Error(
+      `Original Shopify customer ${email} still exists after profile completion (${remainingCustomerId}). ${
+        errors.length ? errors.join("; ") : "No delete error returned."
+      }`
+    );
+  }
+
+  if (!deletedById && !deletedByEmail && errors.length) {
+    throw new Error(`Original Shopify customer cleanup failed for ${email}: ${errors.join("; ")}`);
+  }
+
+  return { deletedById, deletedByEmail, remainingCustomerId };
+}
+
 async function savePortalProfile({
   shop,
   email,
@@ -674,29 +715,20 @@ async function completePendingNativeProfile({
       },
     });
 
-    await deleteShopifyCustomerById({
+    await cleanupOriginalShopifyCustomer({
       shop,
+      email: originalEmail,
+      schoolEmail: pending.schoolEmail,
       customerId: pending.loggedInCustomerId,
     }).catch((error) => {
-      console.warn("Original Shopify customer cleanup by id failed", {
+      console.error("Original Shopify customer cleanup failed after school verification", {
         shop,
         originalEmail,
         schoolEmail: pending.schoolEmail,
         customerId: pending.loggedInCustomerId,
         error: String(error?.message || error),
       });
-    });
-
-    await deleteShopifyCustomerByEmail({
-      shop,
-      email: originalEmail,
-    }).catch((error) => {
-      console.warn("Original Shopify customer cleanup by email failed", {
-        shop,
-        originalEmail,
-        schoolEmail: pending.schoolEmail,
-        error: String(error?.message || error),
-      });
+      throw error;
     });
 
     await prisma.schoolEmailVerification.deleteMany({
