@@ -119,7 +119,7 @@ function generatePendingProfileToken() {
   return crypto.randomBytes(24).toString("hex");
 }
 
-function buildShopifyLoginRedirect(resumePath, loginHint = "") {
+function buildShopifyLoginRedirect(resumePath, loginHint = "", options = {}) {
   const loginParams = new URLSearchParams({ return_to: resumePath });
   if (loginHint) {
     loginParams.set("login_hint", loginHint);
@@ -129,7 +129,15 @@ function buildShopifyLoginRedirect(resumePath, loginHint = "") {
     loginParams.set("customer_email", loginHint);
     loginParams.set("checkout[email]", loginHint);
   }
-  return `/customer_authentication/login?${loginParams.toString()}`;
+  const loginPath = `/customer_authentication/login?${loginParams.toString()}`;
+  if (!options.forceNewSession) return loginPath;
+
+  const logoutParams = new URLSearchParams({ return_url: loginPath });
+  if (loginHint) {
+    logoutParams.set("login_hint", loginHint);
+    logoutParams.set("email", loginHint);
+  }
+  return `/account/logout?${logoutParams.toString()}`;
 }
 
 function getStorefrontContext(request, formData) {
@@ -666,7 +674,9 @@ export async function action({ request }) {
         return json({
           ok: false,
           requiresShopifyLogin: true,
-          redirectUrl: buildShopifyLoginRedirect(resumePath, pending.schoolEmail),
+          redirectUrl: buildShopifyLoginRedirect(resumePath, pending.schoolEmail, {
+            forceNewSession: true,
+          }),
           errors: {
             ...errors,
             email: `Verified account is ${rawEmail || "another email"}. Sign in with ${pending.schoolEmail} to finish.`,
@@ -897,7 +907,9 @@ export async function action({ request }) {
       const token = generatePendingProfileToken();
       const resumeBase = normalizeResumePath(formData.get("resume_path"));
       const resumePath = `${resumeBase}${resumeBase.includes("?") ? "&" : "?"}pending_profile_token=${encodeURIComponent(token)}`;
-      const redirectUrl = buildShopifyLoginRedirect(resumePath, schoolEmail);
+      const redirectUrl = buildShopifyLoginRedirect(resumePath, schoolEmail, {
+        forceNewSession: true,
+      });
 
       await prisma.pendingNativeProfile.create({
         data: {
