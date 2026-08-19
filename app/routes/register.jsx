@@ -120,7 +120,7 @@ function generatePendingProfileToken() {
 }
 
 function buildShopifyLoginRedirect(resumePath, loginHint = "") {
-  const loginParams = new URLSearchParams({ return_url: resumePath });
+  const loginParams = new URLSearchParams({ return_to: resumePath });
   if (loginHint) {
     loginParams.set("login_hint", loginHint);
     loginParams.set("email", loginHint);
@@ -129,7 +129,7 @@ function buildShopifyLoginRedirect(resumePath, loginHint = "") {
     loginParams.set("customer_email", loginHint);
     loginParams.set("checkout[email]", loginHint);
   }
-  const loginPath = `/account/login?${loginParams.toString()}`;
+  const loginPath = `/customer_authentication/login?${loginParams.toString()}`;
   const logoutParams = new URLSearchParams({ return_url: loginPath });
   if (loginHint) {
     logoutParams.set("login_hint", loginHint);
