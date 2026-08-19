@@ -460,7 +460,13 @@
       if (!res.ok || !data || data.ok === false) {
         const errors = data && data.errors ? data.errors : {};
         applyServerErrors(errors);
-        throw new Error((errors && (errors.general || errors.email)) || 'Could not save right now.');
+        const error = new Error((errors && (errors.general || errors.email)) || 'Could not save right now.');
+        if (data) {
+          error.redirectUrl = data.redirectUrl || '';
+          error.requiresShopifyLogin = data.requiresShopifyLogin === true;
+          error.messageText = data.message || '';
+        }
+        throw error;
       }
 
       return data;
@@ -490,6 +496,13 @@
 
         redirectAfterProfileComplete('');
       } catch (error) {
+        if (error.requiresShopifyLogin && error.redirectUrl) {
+          setStatus(error.messageText || 'Please confirm the email shown on the next page to finish your profile.', 'success');
+          setTimeout(function () {
+            window.location.replace(error.redirectUrl);
+          }, 800);
+          return;
+        }
         setStatus(error.message || 'Could not finish profile.', 'error');
       } finally {
         submitBtn.disabled = false;
