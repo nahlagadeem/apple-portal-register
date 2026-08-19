@@ -586,7 +586,7 @@
       }
 
       setStatus(accountEmailEl && accountEmailEl.value.toLowerCase() !== getSchoolEmail()
-        ? 'We will send a verification code to ' + getSchoolEmail() + '.'
+        ? 'Please confirm this is your school email: ' + getSchoolEmail() + '. We will send a verification code to this address.'
         : 'Saving...', 'success');
       submitBtn.disabled = true;
       if (skipBtn) skipBtn.disabled = true;
@@ -594,10 +594,10 @@
       try {
         const data = await postForm(new FormData(form));
         if (data.redirectUrl) {
-          setStatus(data.message || ('Enter the verification code sent to ' + getSchoolEmail() + ' to complete your profile.'), 'success');
+          setStatus(data.message || ('Please confirm this is your school email: ' + getSchoolEmail() + '. We will send a verification code to this address.'), 'success');
           setTimeout(function () {
             window.location.replace(data.redirectUrl);
-          }, 1200);
+          }, 1800);
           return;
         }
 
